@@ -1,0 +1,69 @@
+# ============================================
+# Root .gitignore for VelcozSharp
+# Covers: .NET backend, Next.js frontend, OS/IDE noise
+# ============================================
+
+# ----------------------------------------
+# OS Generated
+# ----------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ----------------------------------------
+# IDE / Editor
+# ----------------------------------------
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ----------------------------------------
+# Logs
+# ----------------------------------------
+*.log
+logs/
+
+# ----------------------------------------
+# Environment / Secrets (root level safety net)
+# ----------------------------------------
+.env
+.env.*.local
+.env.local
+secrets.json
+*.pfx
+*.key
+
+# ----------------------------------------
+# Docker
+# ----------------------------------------
+postgres-data/
+
+# ----------------------------------------
+# Backend (.NET) — safety net if subfolder ignores are missing
+# ----------------------------------------
+**/bin/
+**/obj/
+**/out/
+*.user
+*.suo
+*.cache
+
+# ----------------------------------------
+# Frontend (Node/Next.js) — safety net if subfolder ignores are missing
+# ----------------------------------------
+**/node_modules/
+**/.next/
+**/next-env.d.ts
+**/dist/
+**/build/
+**/coverage/
+
+# ----------------------------------------
+# Misc
+# ----------------------------------------
+*.tmp
+*.temp
