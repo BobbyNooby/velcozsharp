@@ -1,0 +1,20 @@
+{
+  "name": "velcozsharp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm run db:up && concurrently --names DB,BACKEND,FRONTEND --prefix-colors cyan,green,yellow \"docker compose logs -f postgres\" \"pnpm run dev:backend\" \"pnpm run dev:frontend\"",
+    "dev:backend": "cd backend && dotnet run",
+    "dev:frontend": "cd frontend && pnpm dev",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:migrate": "cd backend && dotnet ef database update",
+    "db:drop": "cd backend && dotnet ef database drop --force",
+    "db:reset": "pnpm run db:drop && pnpm run db:migrate",
+    "setup": "pnpm install && cd backend && dotnet restore && pnpm run db:up && sleep 3 && pnpm run db:migrate"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
