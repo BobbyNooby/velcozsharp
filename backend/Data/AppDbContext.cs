@@ -1,18 +1,18 @@
 using backend.Models.Entities;
 using backend.Services;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend.Data;
 
-public class AppDbContext : DbContext
+public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
 {
     private readonly ITenantContext _tenantContext;
 
     public Guid CurrentOrganizationId { get; set; }
 
-    public DbSet<User> Users => Set<User>();
     public DbSet<Organization> Organizations => Set<Organization>();
-    public DbSet<UserOrganization> UserOrganizations => Set<UserOrganization>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<AssetTypeDefinition> AssetTypeDefinitions => Set<AssetTypeDefinition>();
     public DbSet<AssetTypeField> AssetTypeFields => Set<AssetTypeField>();
@@ -33,7 +33,16 @@ public class AppDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // Tenant isolation filters — only on entities with direct OrganizationId
+        // Rename Identity tables to use lowercase (PostgreSQL-friendly)
+        modelBuilder.Entity<AppUser>(b => b.ToTable("users"));
+        modelBuilder.Entity<IdentityRole<Guid>>(b => b.ToTable("roles"));
+        modelBuilder.Entity<IdentityUserRole<Guid>>(b => b.ToTable("user_roles"));
+        modelBuilder.Entity<IdentityUserClaim<Guid>>(b => b.ToTable("user_claims"));
+        modelBuilder.Entity<IdentityUserLogin<Guid>>(b => b.ToTable("user_logins"));
+        modelBuilder.Entity<IdentityRoleClaim<Guid>>(b => b.ToTable("role_claims"));
+        modelBuilder.Entity<IdentityUserToken<Guid>>(b => b.ToTable("user_tokens"));
+
+        // Tenant isolation filters
         modelBuilder.Entity<Department>()
             .HasQueryFilter(d => d.OrganizationId == CurrentOrganizationId);
 
@@ -52,19 +61,12 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<AuditLog>()
             .HasQueryFilter(al => al.OrganizationId == CurrentOrganizationId);
 
-        // UserOrganization composite key
-        modelBuilder.Entity<UserOrganization>()
-            .HasKey(uo => new { uo.UserId, uo.OrganizationId });
-
-        modelBuilder.Entity<UserOrganization>()
-            .HasOne(uo => uo.User)
-            .WithMany(u => u.Organizations)
-            .HasForeignKey(uo => uo.UserId);
-
-        modelBuilder.Entity<UserOrganization>()
-            .HasOne(uo => uo.Organization)
+        // AppUser -> Organization
+        modelBuilder.Entity<AppUser>()
+            .HasOne(u => u.Organization)
             .WithMany(o => o.Users)
-            .HasForeignKey(uo => uo.OrganizationId);
+            .HasForeignKey(u => u.OrganizationId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // AssetVulnerability composite key
         modelBuilder.Entity<AssetVulnerability>()
@@ -82,21 +84,21 @@ public class AppDbContext : DbContext
             .HasForeignKey(av => av.VulnerabilityId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // AssetTypeField -> AssetTypeDefinition relationship
+        // AssetTypeField -> AssetTypeDefinition
         modelBuilder.Entity<AssetTypeField>()
             .HasOne(f => f.AssetType)
             .WithMany(at => at.Fields)
             .HasForeignKey(f => f.AssetTypeId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Asset -> AssetTypeDefinition relationship
+        // Asset -> AssetTypeDefinition
         modelBuilder.Entity<Asset>()
             .HasOne(a => a.AssetType)
             .WithMany(at => at.Assets)
             .HasForeignKey(a => a.AssetTypeId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Asset -> Department relationship
+        // Asset -> Department
         modelBuilder.Entity<Asset>()
             .HasOne(a => a.Department)
             .WithMany()
@@ -114,10 +116,6 @@ public class AppDbContext : DbContext
             .HasColumnType("uuid[]");
 
         // Unique indexes
-        modelBuilder.Entity<User>()
-            .HasIndex(u => u.Email)
-            .IsUnique();
-
         modelBuilder.Entity<Vulnerability>()
             .HasIndex(v => v.CveId)
             .IsUnique();
@@ -125,7 +123,7 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Organization>()
             .HasIndex(o => o.Name);
 
-        // Standard indexes for performance
+        // Standard indexes
         modelBuilder.Entity<Asset>()
             .HasIndex(a => a.OrganizationId);
 

@@ -9,7 +9,7 @@ public class Organization
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    public List<UserOrganization> Users { get; set; } = [];
+    public List<AppUser> Users { get; set; } = [];
     public List<Department> Departments { get; set; } = [];
     public List<AssetTypeDefinition> AssetTypes { get; set; } = [];
     public List<Asset> Assets { get; set; } = [];
