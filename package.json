@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "pnpm run db:up && concurrently --names DB,BACKEND,FRONTEND --prefix-colors cyan,green,yellow \"docker compose logs -f postgres\" \"pnpm run dev:backend\" \"pnpm run dev:frontend\"",
-    "dev:backend": "cd backend && dotnet run",
+    "predev": "pnpm run kill:all",
+    "dev": "pnpm run db:up && concurrently --kill-others --names DB,BACKEND,FRONTEND --prefix-colors cyan,green,yellow \"docker compose logs -f postgres\" \"pnpm run dev:backend\" \"pnpm run dev:frontend\"",
+    "dev:backend": "cd backend && dotnet run --urls http://localhost:5038",
     "dev:frontend": "cd frontend && pnpm dev",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
@@ -12,9 +13,11 @@
     "db:migrate": "cd backend && dotnet ef database update",
     "db:drop": "cd backend && dotnet ef database drop --force",
     "db:reset": "pnpm run db:drop && pnpm run db:migrate",
+    "kill:all": "npx kill-port 5038 3000 || true",
     "setup": "pnpm install && cd backend && dotnet restore && pnpm run db:up && sleep 3 && pnpm run db:migrate"
   },
   "devDependencies": {
-    "concurrently": "^9.0.0"
+    "concurrently": "^9.0.0",
+    "kill-port": "^2.0.1"
   }
 }
