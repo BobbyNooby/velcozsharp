@@ -23,6 +23,23 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
+// Test database connection on startup
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    try
+    {
+        var canConnect = await db.Database.CanConnectAsync();
+        Console.WriteLine(canConnect
+            ? "✅ Database connection successful: PostgreSQL is reachable."
+            : "❌ Database connection failed: CanConnect returned false.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ Database connection error: {ex.Message}");
+    }
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
