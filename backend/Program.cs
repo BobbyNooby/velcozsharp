@@ -1,11 +1,63 @@
 using backend.Data;
+using backend.Models.Entities;
 using backend.Services;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddOpenApi();
+
+// Identity
+builder.Services.AddIdentity<AppUser, IdentityRole<Guid>>(options =>
+{
+    options.Password.RequireDigit = false;
+    options.Password.RequireLowercase = false;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequireUppercase = false;
+    options.Password.RequiredLength = 6;
+    options.User.RequireUniqueEmail = true;
+})
+    .AddEntityFrameworkStores<AppDbContext>()
+    .AddDefaultTokenProviders();
+
+// Cookie auth config
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.Cookie.Name = "velcoz_auth";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.None; // dev only
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.ExpireTimeSpan = TimeSpan.FromHours(24);
+    options.SlidingExpiration = true;
+
+    // Return 401 for API requests instead of redirecting to login page
+    options.Events.OnRedirectToLogin = context =>
+    {
+        context.Response.StatusCode = 401;
+        return Task.CompletedTask;
+    };
+    options.Events.OnRedirectToAccessDenied = context =>
+    {
+        context.Response.StatusCode = 403;
+        return Task.CompletedTask;
+    };
+});
+
+builder.Services.AddAuthorization();
+
+// CORS for dev
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("DevCors", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
 
 // DbContext with PostgreSQL
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -15,7 +67,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     )
 );
 
-// Tenant context — replaced with real implementation in Phase 2
+// Tenant context
 builder.Services.AddScoped<ITenantContext, NullTenantContext>();
 
 // Controllers
@@ -23,7 +75,7 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
-// Test database connection on startup
+// Test database connection + seed on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -33,6 +85,11 @@ using (var scope = app.Services.CreateScope())
         Console.WriteLine(canConnect
             ? "✅ Database connection successful: PostgreSQL is reachable."
             : "❌ Database connection failed: CanConnect returned false.");
+
+        if (canConnect && app.Environment.IsDevelopment())
+        {
+            await DevSeeder.SeedAsync(app.Services);
+        }
     }
     catch (Exception ex)
     {
@@ -45,6 +102,11 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+app.UseCors("DevCors");
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.UseHttpsRedirection();
 
