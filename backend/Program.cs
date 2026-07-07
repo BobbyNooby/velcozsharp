@@ -3,6 +3,7 @@ using backend.Models.Entities;
 using backend.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,10 +61,14 @@ builder.Services.AddCors(options =>
     });
 });
 
-// DbContext with PostgreSQL
+// DbContext with PostgreSQL + dynamic JSONB support for Dictionary<string, object>
+var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("DefaultConnection"));
+dataSourceBuilder.EnableDynamicJson();
+var dataSource = dataSourceBuilder.Build();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
+        dataSource,
         npgsqlOptions => npgsqlOptions.MigrationsAssembly("backend")
     )
 );
