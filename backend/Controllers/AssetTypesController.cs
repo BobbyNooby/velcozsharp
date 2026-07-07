@@ -200,9 +200,38 @@ public class AssetTypesController : ControllerBase
 
         if (assetType == null) return NotFound();
 
+        // Find or create a fallback "Unknown" type so assets don't break
+        var unknownType = await _db.AssetTypeDefinitions
+            .FirstOrDefaultAsync(at => at.Name == "Unknown" && at.IsActive);
+
+        if (unknownType == null)
+        {
+            unknownType = new AssetTypeDefinition
+            {
+                Id = Guid.NewGuid(),
+                Name = "Unknown",
+                Description = "Fallback type for assets whose original type was deleted.",
+                OrganizationId = orgId,
+                IsActive = true,
+                Fields = []
+            };
+            _db.AssetTypeDefinitions.Add(unknownType);
+            await _db.SaveChangesAsync();
+        }
+
+        // Reassign all assets using this type to Unknown
+        var affectedAssets = await _db.Assets
+            .Where(a => a.AssetTypeId == id)
+            .ToListAsync();
+
+        foreach (var asset in affectedAssets)
+        {
+            asset.AssetTypeId = unknownType.Id;
+        }
+
         assetType.IsActive = false;
         await _db.SaveChangesAsync();
 
-        return NoContent();
+        return Ok(new { message = $"Asset type deleted. {affectedAssets.Count} asset(s) reassigned to 'Unknown'." });
     }
 }

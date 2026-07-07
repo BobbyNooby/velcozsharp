@@ -19,6 +19,13 @@ type User = {
   organizationName: string;
 };
 
+type FieldDraft = {
+  name: string;
+  dataType: string;
+  isRequired: boolean;
+  isCveSearchable: boolean;
+};
+
 export default function AuthTestPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,10 +43,17 @@ export default function AuthTestPage() {
   const [assetTypes, setAssetTypes] = useState<any[]>([]);
   const [newTypeName, setNewTypeName] = useState("");
   const [newTypeDesc, setNewTypeDesc] = useState("");
+  const [typeFields, setTypeFields] = useState<FieldDraft[]>([
+    { name: "hostname", dataType: "text", isRequired: true, isCveSearchable: false },
+    { name: "os", dataType: "text", isRequired: true, isCveSearchable: true },
+    { name: "version", dataType: "text", isRequired: false, isCveSearchable: true },
+  ]);
 
   // Phase 5 data
   const [assets, setAssets] = useState<any[]>([]);
   const [newAssetName, setNewAssetName] = useState("");
+  const [newAssetTypeId, setNewAssetTypeId] = useState<string>("");
+  const [newAssetDeptId, setNewAssetDeptId] = useState<string>("");
 
   const [apiLog, setApiLog] = useState<string[]>([]);
 
@@ -127,6 +141,7 @@ export default function AuthTestPage() {
       const res = await fetch(`${API}/departments`, { credentials: "include" });
       const data = await res.json();
       setDepts(data);
+      if (data.length > 0 && !newAssetDeptId) setNewAssetDeptId(data[0].id);
       log(`GET /departments -> ${res.status}, ${data.length} items`);
     } catch (e) {
       log(`GET /departments -> ERROR`);
@@ -159,6 +174,7 @@ export default function AuthTestPage() {
       const res = await fetch(`${API}/asset-types`, { credentials: "include" });
       const data = await res.json();
       setAssetTypes(data);
+      if (data.length > 0 && !newAssetTypeId) setNewAssetTypeId(data[0].id);
       log(`GET /asset-types -> ${res.status}, ${data.length} items`);
     } catch (e) {
       log(`GET /asset-types -> ERROR`);
@@ -171,11 +187,13 @@ export default function AuthTestPage() {
       name: newTypeName,
       description: newTypeDesc,
       iconName: "server",
-      fields: [
-        { name: "hostname", dataType: "text", isRequired: true, isCveSearchable: false, displayOrder: 0 },
-        { name: "os", dataType: "text", isRequired: true, isCveSearchable: true, displayOrder: 1 },
-        { name: "version", dataType: "text", isRequired: false, isCveSearchable: true, displayOrder: 2 },
-      ],
+      fields: typeFields.map((f, i) => ({
+        name: f.name,
+        dataType: f.dataType,
+        isRequired: f.isRequired,
+        isCveSearchable: f.isCveSearchable,
+        displayOrder: i,
+      })),
     };
     try {
       const res = await fetch(`${API}/asset-types`, {
@@ -189,10 +207,42 @@ export default function AuthTestPage() {
       if (res.ok) {
         setNewTypeName("");
         setNewTypeDesc("");
+        setTypeFields([
+          { name: "hostname", dataType: "text", isRequired: true, isCveSearchable: false },
+          { name: "os", dataType: "text", isRequired: true, isCveSearchable: true },
+          { name: "version", dataType: "text", isRequired: false, isCveSearchable: true },
+        ]);
         fetchAssetTypes();
       }
     } catch (e) {
       log(`POST /asset-types -> ERROR`);
+    }
+  };
+
+  const addTypeField = () => {
+    setTypeFields((prev) => [...prev, { name: "", dataType: "text", isRequired: false, isCveSearchable: false }]);
+  };
+
+  const removeTypeField = (idx: number) => {
+    setTypeFields((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateTypeField = (idx: number, patch: Partial<FieldDraft>) => {
+    setTypeFields((prev) => prev.map((f, i) => (i === idx ? { ...f, ...patch } : f)));
+  };
+
+  const deleteAssetType = async (id: string) => {
+    if (!confirm("Delete this asset type? Assets using it will become 'Unknown'.")) return;
+    try {
+      const res = await fetch(`${API}/asset-types/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      log(`DELETE /asset-types/${id} -> ${res.status}, ${data.message || ""}`);
+      if (res.ok) fetchAssetTypes();
+    } catch (e) {
+      log(`DELETE /asset-types -> ERROR`);
     }
   };
 
@@ -209,18 +259,23 @@ export default function AuthTestPage() {
   };
 
   const createAsset = async () => {
-    if (!newAssetName.trim() || assetTypes.length === 0 || depts.length === 0) return;
-    const type = assetTypes[0];
-    const dept = depts[0];
+    if (!newAssetName.trim() || !newAssetTypeId || !newAssetDeptId) return;
+    const type = assetTypes.find((t) => t.id === newAssetTypeId);
+    // Build properties from the type's fields
+    const properties: Record<string, any> = {};
+    if (type?.fields) {
+      for (const f of type.fields) {
+        if (f.name === "hostname") properties[f.name] = newAssetName.toLowerCase().replace(/\s+/g, "-");
+        else if (f.name === "os") properties[f.name] = "Ubuntu 22.04";
+        else if (f.name === "version") properties[f.name] = "1.0.0";
+        else properties[f.name] = "demo";
+      }
+    }
     const payload = {
       name: newAssetName,
-      assetTypeId: type.id,
-      departmentId: dept.id,
-      properties: {
-        hostname: newAssetName.toLowerCase().replace(/\s+/g, "-"),
-        os: "Ubuntu 22.04",
-        version: "1.0.0",
-      },
+      assetTypeId: newAssetTypeId,
+      departmentId: newAssetDeptId,
+      properties,
     };
     try {
       const res = await fetch(`${API}/assets`, {
@@ -357,6 +412,7 @@ export default function AuthTestPage() {
               </div>
             )}
           </div>
+
           {/* Asset Types */}
           <div className="border p-4 space-y-2">
             <div className="flex justify-between items-center">
@@ -365,22 +421,65 @@ export default function AuthTestPage() {
             </div>
 
             {user.role === "Admin" && (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newTypeName}
-                  onChange={(e) => setNewTypeName(e.target.value)}
-                  className="flex-1 px-2 py-1 border text-sm"
-                  placeholder="New asset type name"
-                />
-                <input
-                  type="text"
-                  value={newTypeDesc}
-                  onChange={(e) => setNewTypeDesc(e.target.value)}
-                  className="flex-1 px-2 py-1 border text-sm"
-                  placeholder="Description"
-                />
-                <button onClick={createAssetType} className="px-2 py-1 bg-green-600 text-white text-sm rounded">Create</button>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newTypeName}
+                    onChange={(e) => setNewTypeName(e.target.value)}
+                    className="flex-1 px-2 py-1 border text-sm"
+                    placeholder="New asset type name"
+                  />
+                  <input
+                    type="text"
+                    value={newTypeDesc}
+                    onChange={(e) => setNewTypeDesc(e.target.value)}
+                    className="flex-1 px-2 py-1 border text-sm"
+                    placeholder="Description"
+                  />
+                  <button onClick={createAssetType} className="px-2 py-1 bg-green-600 text-white text-sm rounded">Create</button>
+                </div>
+                <div className="space-y-1">
+                  {typeFields.map((f, idx) => (
+                    <div key={idx} className="flex gap-2 items-center text-sm">
+                      <input
+                        type="text"
+                        value={f.name}
+                        onChange={(e) => updateTypeField(idx, { name: e.target.value })}
+                        className="flex-1 px-2 py-1 border"
+                        placeholder="Field name"
+                      />
+                      <select
+                        value={f.dataType}
+                        onChange={(e) => updateTypeField(idx, { dataType: e.target.value })}
+                        className="px-2 py-1 border"
+                      >
+                        <option value="text">text</option>
+                        <option value="number">number</option>
+                        <option value="boolean">boolean</option>
+                        <option value="date">date</option>
+                      </select>
+                      <label className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={f.isRequired}
+                          onChange={(e) => updateTypeField(idx, { isRequired: e.target.checked })}
+                        />
+                        Req
+                      </label>
+                      <label className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={f.isCveSearchable}
+                          onChange={(e) => updateTypeField(idx, { isCveSearchable: e.target.checked })}
+                        />
+                        CVE
+                      </label>
+                      <button onClick={() => removeTypeField(idx)} className="px-1 py-0.5 bg-red-100 text-red-700 text-xs rounded">&times;</button>
+                    </div>
+                  ))}
+                  <button onClick={addTypeField} className="text-xs text-blue-600 hover:underline">+ Add field</button>
+                </div>
               </div>
             )}
 
@@ -390,9 +489,14 @@ export default function AuthTestPage() {
               <div className="space-y-2">
                 {assetTypes.map((t) => (
                   <div key={t.id} className="border p-2 text-sm">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center">
                       <span className="font-medium">{t.name}</span>
-                      <span className="text-gray-500 text-xs">{t.id}</span>
+                      <div className="flex gap-2">
+                        <span className="text-gray-500 text-xs">{t.id}</span>
+                        {user.role === "Admin" && (
+                          <button onClick={() => deleteAssetType(t.id)} className="text-xs text-red-600 hover:underline">Delete</button>
+                        )}
+                      </div>
                     </div>
                     {t.description && <div className="text-gray-600 text-xs">{t.description}</div>}
                     {t.fields?.length > 0 && (
@@ -405,6 +509,7 @@ export default function AuthTestPage() {
               </div>
             )}
           </div>
+
           {/* Assets */}
           <div className="border p-4 space-y-2">
             <div className="flex justify-between items-center">
@@ -413,15 +518,37 @@ export default function AuthTestPage() {
             </div>
 
             {user.role !== "Viewer" && (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newAssetName}
-                  onChange={(e) => setNewAssetName(e.target.value)}
-                  className="flex-1 px-2 py-1 border text-sm"
-                  placeholder="New asset name"
-                />
-                <button onClick={createAsset} className="px-2 py-1 bg-green-600 text-white text-sm rounded">Create</button>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newAssetName}
+                    onChange={(e) => setNewAssetName(e.target.value)}
+                    className="flex-1 px-2 py-1 border text-sm"
+                    placeholder="New asset name"
+                  />
+                  <select
+                    value={newAssetTypeId}
+                    onChange={(e) => setNewAssetTypeId(e.target.value)}
+                    className="px-2 py-1 border text-sm"
+                  >
+                    <option value="">Type...</option>
+                    {assetTypes.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={newAssetDeptId}
+                    onChange={(e) => setNewAssetDeptId(e.target.value)}
+                    className="px-2 py-1 border text-sm"
+                  >
+                    <option value="">Dept...</option>
+                    {depts.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                  <button onClick={createAsset} className="px-2 py-1 bg-green-600 text-white text-sm rounded">Create</button>
+                </div>
               </div>
             )}
 
@@ -433,7 +560,7 @@ export default function AuthTestPage() {
                   <div key={a.id} className="border p-2 text-sm">
                     <div className="flex justify-between">
                       <span className="font-medium">{a.name}</span>
-                      <span className={`text-xs px-1 rounded ${a.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{a.status}</span>
+                      <span className={`text-xs px-1 rounded ${a.status === 'Active' ? 'bg-green-100 text-green-700' : a.status === 'Retired' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>{a.status}</span>
                     </div>
                     <div className="text-gray-500 text-xs">
                       {a.assetTypeName} &bull; {a.departmentName}
