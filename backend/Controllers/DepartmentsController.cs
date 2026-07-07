@@ -67,7 +67,7 @@ public class DepartmentsController : ControllerBase
         return Ok(department);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = RoleNames.Admin)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateDepartmentRequest request)
     {
@@ -92,7 +92,7 @@ public class DepartmentsController : ControllerBase
         });
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = RoleNames.Admin)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateDepartmentRequest request)
     {
@@ -108,7 +108,7 @@ public class DepartmentsController : ControllerBase
         return NoContent();
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = RoleNames.Admin)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
