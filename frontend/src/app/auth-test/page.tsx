@@ -27,11 +27,17 @@ export default function AuthTestPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  // Phase 3 data
+  const [orgs, setOrgs] = useState<any[]>([]);
+  const [depts, setDepts] = useState<any[]>([]);
+  const [newDeptName, setNewDeptName] = useState("");
+  const [apiLog, setApiLog] = useState<string[]>([]);
+
+  const log = (msg: string) => setApiLog((prev) => [...prev.slice(-19), msg]);
+
   const fetchMe = async () => {
     try {
-      const res = await fetch(`${API}/auth/me`, {
-        credentials: "include",
-      });
+      const res = await fetch(`${API}/auth/me`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setUser(data);
@@ -77,12 +83,11 @@ export default function AuthTestPage() {
   const logout = async () => {
     setLoading(true);
     try {
-      await fetch(`${API}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await fetch(`${API}/auth/logout`, { method: "POST", credentials: "include" });
     } catch {}
     setUser(null);
+    setOrgs([]);
+    setDepts([]);
     setRawCookies(document.cookie);
     setLoading(false);
   };
@@ -93,125 +98,181 @@ export default function AuthTestPage() {
     login(acc.email, acc.password);
   };
 
+  // Phase 3 fetchers
+  const fetchOrgs = async () => {
+    try {
+      const res = await fetch(`${API}/organizations`, { credentials: "include" });
+      const data = await res.json();
+      setOrgs(data);
+      log(`GET /organizations -> ${res.status}, ${data.length} items`);
+    } catch (e) {
+      log(`GET /organizations -> ERROR`);
+    }
+  };
+
+  const fetchDepts = async () => {
+    try {
+      const res = await fetch(`${API}/departments`, { credentials: "include" });
+      const data = await res.json();
+      setDepts(data);
+      log(`GET /departments -> ${res.status}, ${data.length} items`);
+    } catch (e) {
+      log(`GET /departments -> ERROR`);
+    }
+  };
+
+  const createDept = async () => {
+    if (!newDeptName.trim()) return;
+    try {
+      const res = await fetch(`${API}/departments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: newDeptName }),
+      });
+      const data = await res.json();
+      log(`POST /departments -> ${res.status}, id=${data.id || "N/A"}`);
+      if (res.ok) {
+        setNewDeptName("");
+        fetchDepts();
+      }
+    } catch (e) {
+      log(`POST /departments -> ERROR`);
+    }
+  };
+
   return (
-    <div className="max-w-2xl mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-2">VelcozSharp Auth Test</h1>
-      <p className="text-gray-500 mb-6">Cookie-based session auth with ASP.NET Core Identity</p>
+    <div className="max-w-4xl mx-auto p-4 space-y-6">
+      <h1 className="text-2xl font-bold">VelcozSharp Dev Test Page</h1>
 
       {!user ? (
-        <div className="space-y-6">
-          {/* Manual Login Form */}
-          <div className="bg-white border rounded-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold">Manual Login</h2>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="user@example.com"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="••••••••"
-              />
-            </div>
+        <div className="space-y-4">
+          <div className="border p-4 space-y-2">
+            <h2 className="font-semibold">Manual Login</h2>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-2 py-1 border"
+              placeholder="email"
+            />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-2 py-1 border"
+              placeholder="password"
+            />
             <button
               onClick={() => login(email, password)}
-              disabled={loading || !email || !password}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading}
+              className="px-3 py-1 bg-blue-600 text-white rounded"
             >
-              {loading ? "Logging in..." : "Login"}
+              Login
             </button>
-            {error && (
-              <div className="p-3 bg-red-100 text-red-700 rounded-md text-sm">{error}</div>
-            )}
+            {error && <div className="text-red-600 text-sm">{error}</div>}
           </div>
 
-          {/* Dev Accounts Quick Login */}
-          <div className="bg-gray-50 border rounded-lg p-6">
-            <h2 className="text-lg font-semibold mb-4">Dev Accounts (Quick Login)</h2>
-            <div className="space-y-3">
-              {DEV_ACCOUNTS.map((acc) => (
-                <div
-                  key={acc.email}
-                  className="flex items-center justify-between bg-white p-3 rounded-md border"
-                >
-                  <div className="text-sm">
-                    <div className="font-medium">{acc.name}</div>
-                    <div className="text-gray-500 font-mono text-xs">{acc.email} / {acc.password}</div>
-                  </div>
-                  <button
-                    onClick={() => fillAndLogin(acc)}
-                    disabled={loading}
-                    className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded hover:bg-gray-900 disabled:opacity-50"
-                  >
-                    {loading ? "..." : `Login as ${acc.role}`}
-                  </button>
+          <div className="border p-4 space-y-2">
+            <h2 className="font-semibold">Dev Accounts</h2>
+            {DEV_ACCOUNTS.map((acc) => (
+              <div key={acc.email} className="flex justify-between items-center border p-2">
+                <div className="text-sm">
+                  <div className="font-medium">{acc.name}</div>
+                  <div className="text-gray-500 text-xs">{acc.email} / {acc.password}</div>
                 </div>
-              ))}
-            </div>
+                <button
+                  onClick={() => fillAndLogin(acc)}
+                  className="px-2 py-1 bg-gray-800 text-white text-sm rounded"
+                >
+                  Login as {acc.role}
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* Active Session */}
-          <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-green-900">Session Active</h2>
-              <button
-                onClick={logout}
-                disabled={loading}
-                className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-800 disabled:opacity-50"
-              >
-                {loading ? "..." : "Logout"}
-              </button>
+        <div className="space-y-4">
+          {/* Session */}
+          <div className="border p-4">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="font-semibold">Session: {user.email} ({user.role})</h2>
+              <button onClick={logout} className="px-2 py-1 bg-red-600 text-white text-sm rounded">Logout</button>
             </div>
+            <div className="text-xs space-y-1">
+              <div>UserId: <span className="font-mono">{user.userId}</span></div>
+              <div>Org: {user.organizationName} ({user.organizationId})</div>
+            </div>
+          </div>
 
-            <div className="bg-white rounded-md p-4 space-y-3 text-sm">
-              <div className="grid grid-cols-3 gap-2">
-                <span className="text-gray-500">User ID:</span>
-                <span className="col-span-2 font-mono text-xs">{user.userId}</span>
-
-                <span className="text-gray-500">Email:</span>
-                <span className="col-span-2">{user.email}</span>
-
-                <span className="text-gray-500">Display Name:</span>
-                <span className="col-span-2">{user.displayName}</span>
-
-                <span className="text-gray-500">Role:</span>
-                <span className="col-span-2">
-                  <span className="inline-block px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">
-                    {user.role}
-                  </span>
-                </span>
-
-                <span className="text-gray-500">Organization:</span>
-                <span className="col-span-2">{user.organizationName}</span>
-
-                <span className="text-gray-500">Org ID:</span>
-                <span className="col-span-2 font-mono text-xs">{user.organizationId}</span>
+          {/* Organizations */}
+          <div className="border p-4 space-y-2">
+            <div className="flex justify-between items-center">
+              <h2 className="font-semibold">Organizations</h2>
+              <button onClick={fetchOrgs} className="px-2 py-1 bg-gray-200 text-sm rounded">Fetch</button>
+            </div>
+            {orgs.length === 0 ? (
+              <div className="text-gray-500 text-sm">Click Fetch to load</div>
+            ) : (
+              <div className="space-y-1">
+                {orgs.map((o) => (
+                  <div key={o.id} className="border p-2 text-sm">
+                    <span className="font-medium">{o.name}</span>
+                    <span className="text-gray-500 text-xs ml-2">{o.id}</span>
+                  </div>
+                ))}
               </div>
+            )}
+          </div>
+
+          {/* Departments */}
+          <div className="border p-4 space-y-2">
+            <div className="flex justify-between items-center">
+              <h2 className="font-semibold">Departments</h2>
+              <button onClick={fetchDepts} className="px-2 py-1 bg-gray-200 text-sm rounded">Fetch</button>
             </div>
+
+            {user.role === "Admin" && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newDeptName}
+                  onChange={(e) => setNewDeptName(e.target.value)}
+                  className="flex-1 px-2 py-1 border text-sm"
+                  placeholder="New department name"
+                />
+                <button onClick={createDept} className="px-2 py-1 bg-green-600 text-white text-sm rounded">Create</button>
+              </div>
+            )}
+
+            {depts.length === 0 ? (
+              <div className="text-gray-500 text-sm">Click Fetch to load</div>
+            ) : (
+              <div className="space-y-1">
+                {depts.map((d) => (
+                  <div key={d.id} className="border p-2 text-sm flex justify-between">
+                    <span className="font-medium">{d.name}</span>
+                    <span className="text-gray-500 text-xs">{d.id}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Browser Cookies */}
-      <div className="mt-8">
-        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
-          Browser Cookies
-        </h3>
-        <pre className="bg-gray-900 text-green-400 text-xs p-4 rounded-lg overflow-x-auto">
-          {rawCookies || "(no cookies)"}
-        </pre>
+      {/* API Log */}
+      <div className="border p-4">
+        <h2 className="font-semibold mb-2">API Log</h2>
+        <div className="bg-gray-900 text-green-400 text-xs p-2 h-32 overflow-y-auto font-mono">
+          {apiLog.length === 0 ? "No requests yet" : apiLog.map((l, i) => <div key={i}>{l}</div>)}
+        </div>
+      </div>
+
+      {/* Cookies */}
+      <div className="border p-4">
+        <h2 className="font-semibold mb-2">Cookies</h2>
+        <pre className="bg-gray-900 text-green-400 text-xs p-2 overflow-x-auto">{rawCookies || "(none)"}</pre>
       </div>
     </div>
   );
