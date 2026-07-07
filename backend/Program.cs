@@ -20,7 +20,8 @@ builder.Services.AddIdentity<AppUser, IdentityRole<Guid>>(options =>
     options.User.RequireUniqueEmail = true;
 })
     .AddEntityFrameworkStores<AppDbContext>()
-    .AddDefaultTokenProviders();
+    .AddDefaultTokenProviders()
+    .AddClaimsPrincipalFactory<AppUserClaimsPrincipalFactory>();
 
 // Cookie auth config
 builder.Services.ConfigureApplicationCookie(options =>
@@ -68,7 +69,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 );
 
 // Tenant context
-builder.Services.AddScoped<ITenantContext, NullTenantContext>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ITenantContext, CurrentUserContext>();
 
 // Controllers
 builder.Services.AddControllers();

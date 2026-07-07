@@ -22,20 +22,21 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var user = await _userManager.Users
-            .Include(u => u.Organization)
-            .FirstOrDefaultAsync(u => u.Email == request.Email);
-
+        var user = await _userManager.FindByEmailAsync(request.Email);
         if (user == null)
             return Unauthorized(new { message = "Invalid email or password" });
 
         var result = await _signInManager.PasswordSignInAsync(
-            user.UserName!, request.Password, isPersistent: true, lockoutOnFailure: false);
+            user, request.Password, isPersistent: true, lockoutOnFailure: false);
 
         if (!result.Succeeded)
             return Unauthorized(new { message = "Invalid email or password" });
 
         var roles = await _userManager.GetRolesAsync(user);
+        var org = await _userManager.Users
+            .Where(u => u.Id == user.Id)
+            .Select(u => u.Organization)
+            .FirstOrDefaultAsync();
 
         return Ok(new
         {
@@ -44,7 +45,7 @@ public class AuthController : ControllerBase
             displayName = user.DisplayName,
             role = roles.FirstOrDefault(),
             organizationId = user.OrganizationId,
-            organizationName = user.Organization?.Name
+            organizationName = org?.Name
         });
     }
 
@@ -62,13 +63,11 @@ public class AuthController : ControllerBase
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return Unauthorized();
 
-        user = await _userManager.Users
-            .Include(u => u.Organization)
-            .FirstOrDefaultAsync(u => u.Id == user.Id);
-
-        if (user == null) return Unauthorized();
-
         var roles = await _userManager.GetRolesAsync(user);
+        var org = await _userManager.Users
+            .Where(u => u.Id == user.Id)
+            .Select(u => u.Organization)
+            .FirstOrDefaultAsync();
 
         return Ok(new
         {
@@ -77,7 +76,7 @@ public class AuthController : ControllerBase
             displayName = user.DisplayName,
             role = roles.FirstOrDefault(),
             organizationId = user.OrganizationId,
-            organizationName = user.Organization?.Name
+            organizationName = org?.Name
         });
     }
 }
