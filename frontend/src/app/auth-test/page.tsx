@@ -31,6 +31,12 @@ export default function AuthTestPage() {
   const [orgs, setOrgs] = useState<any[]>([]);
   const [depts, setDepts] = useState<any[]>([]);
   const [newDeptName, setNewDeptName] = useState("");
+
+  // Phase 4 data
+  const [assetTypes, setAssetTypes] = useState<any[]>([]);
+  const [newTypeName, setNewTypeName] = useState("");
+  const [newTypeDesc, setNewTypeDesc] = useState("");
+
   const [apiLog, setApiLog] = useState<string[]>([]);
 
   const log = (msg: string) => setApiLog((prev) => [...prev.slice(-19), msg]);
@@ -88,6 +94,7 @@ export default function AuthTestPage() {
     setUser(null);
     setOrgs([]);
     setDepts([]);
+    setAssetTypes([]);
     setRawCookies(document.cookie);
     setLoading(false);
   };
@@ -138,6 +145,49 @@ export default function AuthTestPage() {
       }
     } catch (e) {
       log(`POST /departments -> ERROR`);
+    }
+  };
+
+  // Phase 4 fetchers
+  const fetchAssetTypes = async () => {
+    try {
+      const res = await fetch(`${API}/asset-types`, { credentials: "include" });
+      const data = await res.json();
+      setAssetTypes(data);
+      log(`GET /asset-types -> ${res.status}, ${data.length} items`);
+    } catch (e) {
+      log(`GET /asset-types -> ERROR`);
+    }
+  };
+
+  const createAssetType = async () => {
+    if (!newTypeName.trim()) return;
+    const payload = {
+      name: newTypeName,
+      description: newTypeDesc,
+      iconName: "server",
+      fields: [
+        { name: "hostname", dataType: "text", isRequired: true, isCveSearchable: false, displayOrder: 0 },
+        { name: "os", dataType: "text", isRequired: true, isCveSearchable: true, displayOrder: 1 },
+        { name: "version", dataType: "text", isRequired: false, isCveSearchable: true, displayOrder: 2 },
+      ],
+    };
+    try {
+      const res = await fetch(`${API}/asset-types`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      log(`POST /asset-types -> ${res.status}, id=${data.id || "N/A"}`);
+      if (res.ok) {
+        setNewTypeName("");
+        setNewTypeDesc("");
+        fetchAssetTypes();
+      }
+    } catch (e) {
+      log(`POST /asset-types -> ERROR`);
     }
   };
 
@@ -253,6 +303,54 @@ export default function AuthTestPage() {
                   <div key={d.id} className="border p-2 text-sm flex justify-between">
                     <span className="font-medium">{d.name}</span>
                     <span className="text-gray-500 text-xs">{d.id}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Asset Types */}
+          <div className="border p-4 space-y-2">
+            <div className="flex justify-between items-center">
+              <h2 className="font-semibold">Asset Types</h2>
+              <button onClick={fetchAssetTypes} className="px-2 py-1 bg-gray-200 text-sm rounded">Fetch</button>
+            </div>
+
+            {user.role === "Admin" && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newTypeName}
+                  onChange={(e) => setNewTypeName(e.target.value)}
+                  className="flex-1 px-2 py-1 border text-sm"
+                  placeholder="New asset type name"
+                />
+                <input
+                  type="text"
+                  value={newTypeDesc}
+                  onChange={(e) => setNewTypeDesc(e.target.value)}
+                  className="flex-1 px-2 py-1 border text-sm"
+                  placeholder="Description"
+                />
+                <button onClick={createAssetType} className="px-2 py-1 bg-green-600 text-white text-sm rounded">Create</button>
+              </div>
+            )}
+
+            {assetTypes.length === 0 ? (
+              <div className="text-gray-500 text-sm">Click Fetch to load</div>
+            ) : (
+              <div className="space-y-2">
+                {assetTypes.map((t) => (
+                  <div key={t.id} className="border p-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="font-medium">{t.name}</span>
+                      <span className="text-gray-500 text-xs">{t.id}</span>
+                    </div>
+                    {t.description && <div className="text-gray-600 text-xs">{t.description}</div>}
+                    {t.fields?.length > 0 && (
+                      <div className="mt-1 text-xs text-gray-500">
+                        Fields: {t.fields.map((f: any) => `${f.name}(${f.dataType}${f.isRequired ? '*' : ''})`).join(', ')}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
