@@ -37,6 +37,10 @@ export default function AuthTestPage() {
   const [newTypeName, setNewTypeName] = useState("");
   const [newTypeDesc, setNewTypeDesc] = useState("");
 
+  // Phase 5 data
+  const [assets, setAssets] = useState<any[]>([]);
+  const [newAssetName, setNewAssetName] = useState("");
+
   const [apiLog, setApiLog] = useState<string[]>([]);
 
   const log = (msg: string) => setApiLog((prev) => [...prev.slice(-19), msg]);
@@ -95,6 +99,7 @@ export default function AuthTestPage() {
     setOrgs([]);
     setDepts([]);
     setAssetTypes([]);
+    setAssets([]);
     setRawCookies(document.cookie);
     setLoading(false);
   };
@@ -188,6 +193,50 @@ export default function AuthTestPage() {
       }
     } catch (e) {
       log(`POST /asset-types -> ERROR`);
+    }
+  };
+
+  // Phase 5 fetchers
+  const fetchAssets = async () => {
+    try {
+      const res = await fetch(`${API}/assets`, { credentials: "include" });
+      const data = await res.json();
+      setAssets(data);
+      log(`GET /assets -> ${res.status}, ${data.length} items`);
+    } catch (e) {
+      log(`GET /assets -> ERROR`);
+    }
+  };
+
+  const createAsset = async () => {
+    if (!newAssetName.trim() || assetTypes.length === 0 || depts.length === 0) return;
+    const type = assetTypes[0];
+    const dept = depts[0];
+    const payload = {
+      name: newAssetName,
+      assetTypeId: type.id,
+      departmentId: dept.id,
+      properties: {
+        hostname: newAssetName.toLowerCase().replace(/\s+/g, "-"),
+        os: "Ubuntu 22.04",
+        version: "1.0.0",
+      },
+    };
+    try {
+      const res = await fetch(`${API}/assets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      log(`POST /assets -> ${res.status}, id=${data.id || "N/A"}`);
+      if (res.ok) {
+        setNewAssetName("");
+        fetchAssets();
+      }
+    } catch (e) {
+      log(`POST /assets -> ERROR`);
     }
   };
 
@@ -349,6 +398,49 @@ export default function AuthTestPage() {
                     {t.fields?.length > 0 && (
                       <div className="mt-1 text-xs text-gray-500">
                         Fields: {t.fields.map((f: any) => `${f.name}(${f.dataType}${f.isRequired ? '*' : ''})`).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Assets */}
+          <div className="border p-4 space-y-2">
+            <div className="flex justify-between items-center">
+              <h2 className="font-semibold">Assets</h2>
+              <button onClick={fetchAssets} className="px-2 py-1 bg-gray-200 text-sm rounded">Fetch</button>
+            </div>
+
+            {user.role !== "Viewer" && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newAssetName}
+                  onChange={(e) => setNewAssetName(e.target.value)}
+                  className="flex-1 px-2 py-1 border text-sm"
+                  placeholder="New asset name"
+                />
+                <button onClick={createAsset} className="px-2 py-1 bg-green-600 text-white text-sm rounded">Create</button>
+              </div>
+            )}
+
+            {assets.length === 0 ? (
+              <div className="text-gray-500 text-sm">Click Fetch to load</div>
+            ) : (
+              <div className="space-y-2">
+                {assets.map((a) => (
+                  <div key={a.id} className="border p-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="font-medium">{a.name}</span>
+                      <span className={`text-xs px-1 rounded ${a.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{a.status}</span>
+                    </div>
+                    <div className="text-gray-500 text-xs">
+                      {a.assetTypeName} &bull; {a.departmentName}
+                    </div>
+                    {a.highestSeverity && (
+                      <div className={`text-xs mt-1 inline-block px-1 rounded ${a.highestSeverity === 'Critical' ? 'bg-red-100 text-red-700' : a.highestSeverity === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                        CVSS: {a.highestCvssScore} ({a.highestSeverity})
                       </div>
                     )}
                   </div>
