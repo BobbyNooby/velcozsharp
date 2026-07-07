@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace backend.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/asset-types")]
 [Authorize]
 public class AssetTypesController : ControllerBase
 {

@@ -72,6 +72,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, CurrentUserContext>();
 
+// Validation services
+builder.Services.AddScoped<IAssetValidationService, AssetValidationService>();
+
 // Controllers
 builder.Services.AddControllers();
 
