@@ -18,7 +18,7 @@ public class AppUserClaimsPrincipalFactory : UserClaimsPrincipalFactory<AppUser,
     protected override async Task<ClaimsIdentity> GenerateClaimsAsync(AppUser user)
     {
         var identity = await base.GenerateClaimsAsync(user);
-        identity.AddClaim(new Claim("organizationId", user.OrganizationId.ToString()));
+        // Organization context is per-request via X-Organization-Id header, not cookie claim
         identity.AddClaim(new Claim("displayName", user.DisplayName));
         return identity;
     }

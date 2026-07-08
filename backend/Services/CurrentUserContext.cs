@@ -19,13 +19,12 @@ public class CurrentUserContext : ITenantContext
                 UserId = uid;
             }
 
-            var orgClaim = user.FindFirst("organizationId")?.Value;
-            if (Guid.TryParse(orgClaim, out var oid))
+            // Read org from header (per-request scoping, not session claim)
+            var headerValue = httpContextAccessor.HttpContext?.Request.Headers["X-Organization-Id"].FirstOrDefault();
+            if (Guid.TryParse(headerValue, out var oid))
             {
                 OrganizationId = oid;
             }
-
-            Role = user.FindFirst(ClaimTypes.Role)?.Value ?? "";
 
             Role = user.FindFirst(ClaimTypes.Role)?.Value ?? "";
         }

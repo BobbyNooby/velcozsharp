@@ -32,17 +32,16 @@ public static class DevSeeder
             }
         }
 
-        // Create organization
-        var org = new Organization
+        // Create organizations
+        var orgs = new[]
         {
-            Id = Guid.NewGuid(),
-            Name = "Demo Corp",
-            Description = "Development sandbox organization"
+            new Organization { Id = Guid.NewGuid(), Name = "Acme Corp", Description = "Primary development sandbox" },
+            new Organization { Id = Guid.NewGuid(), Name = "Beta LLC", Description = "Secondary test org" }
         };
-        db.Organizations.Add(org);
+        db.Organizations.AddRange(orgs);
         await db.SaveChangesAsync();
 
-        // Create fake users
+        // Create fake users with multi-org memberships
         var fakeUsers = new[]
         {
             new { Email = "admin@test.com", Name = "Admin User", Role = "Admin" },
@@ -58,7 +57,7 @@ public static class DevSeeder
                 UserName = fake.Email,
                 Email = fake.Email,
                 DisplayName = fake.Name,
-                OrganizationId = org.Id,
+                OrganizationId = orgs[0].Id, // Legacy: default to first org
                 EmailConfirmed = true
             };
 
@@ -66,7 +65,28 @@ public static class DevSeeder
             if (result.Succeeded)
             {
                 await userManager.AddToRoleAsync(user, fake.Role);
-                Console.WriteLine($"   Created: {fake.Email} ({fake.Role})");
+
+                // Add membership to both orgs
+                db.UserOrganizations.AddRange(
+                    new UserOrganization
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = user.Id,
+                        OrganizationId = orgs[0].Id,
+                        Role = fake.Role,
+                        IsDefault = true
+                    },
+                    new UserOrganization
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = user.Id,
+                        OrganizationId = orgs[1].Id,
+                        Role = "Viewer", // Secondary org always Viewer for simplicity
+                        IsDefault = false
+                    }
+                );
+
+                Console.WriteLine($"   Created: {fake.Email} ({fake.Role}) — member of {orgs[0].Name} + {orgs[1].Name}");
             }
             else
             {
@@ -74,7 +94,21 @@ public static class DevSeeder
             }
         }
 
+        await db.SaveChangesAsync();
+
+        // Seed departments for each org
+        foreach (var org in orgs)
+        {
+            db.Departments.AddRange(
+                new Department { Id = Guid.NewGuid(), Name = "IT", OrganizationId = org.Id },
+                new Department { Id = Guid.NewGuid(), Name = "Security", OrganizationId = org.Id },
+                new Department { Id = Guid.NewGuid(), Name = "HR", OrganizationId = org.Id }
+            );
+        }
+        await db.SaveChangesAsync();
+
         Console.WriteLine("🌱 Dev seeder: Done!");
         Console.WriteLine("   Login with any account + password: password123");
+        Console.WriteLine("   Use X-Organization-Id header to scope requests to an org");
     }
 }
