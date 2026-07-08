@@ -62,6 +62,8 @@ export default function AuthTestClient({
   ]);
 
   const [assets, setAssets] = useState<any[]>([]);
+  const [scanningAsset, setScanningAsset] = useState<string | null>(null);
+  const [scanResults, setScanResults] = useState<Record<string, any>>({});
   const [newAssetName, setNewAssetName] = useState("");
   const [newAssetTypeId, setNewAssetTypeId] = useState<string>(initialAssetTypes[0]?.id ?? "");
   const [newAssetDeptId, setNewAssetDeptId] = useState<string>(initialDepts[0]?.id ?? "");
@@ -296,6 +298,21 @@ export default function AuthTestClient({
     } catch (e) {
       log(`GET /assets -> ERROR`);
     }
+  };
+
+  const scanAsset = async (assetId: string) => {
+    setScanningAsset(assetId);
+    try {
+      const res = await apiFetch(`/scan/assets/${assetId}`, { method: "POST" });
+      const data = await res.json();
+      setScanResults((prev) => ({ ...prev, [assetId]: data }));
+      log(`POST /scan/assets/${assetId} -> ${res.status}, ${data.vulnerabilitiesFound} CVEs`);
+      // Refresh assets to get updated risk scores
+      fetchAssets();
+    } catch (e) {
+      log(`POST /scan/assets/${assetId} -> ERROR`);
+    }
+    setScanningAsset(null);
   };
 
   const createAsset = async () => {
@@ -615,9 +632,18 @@ export default function AuthTestClient({
               <div className="space-y-2">
                 {assets.map((a) => (
                   <div key={a.id} className="border p-2 text-sm">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center">
                       <span className="font-medium">{a.name}</span>
-                      <span className={`text-xs px-1 rounded ${a.status === 'Active' ? 'bg-green-100 text-green-700' : a.status === 'Retired' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>{a.status}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => scanAsset(a.id)}
+                          disabled={scanningAsset === a.id}
+                          className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200 disabled:opacity-50"
+                        >
+                          {scanningAsset === a.id ? "Scanning..." : "Scan CVEs"}
+                        </button>
+                        <span className={`text-xs px-1 rounded ${a.status === 'Active' ? 'bg-green-100 text-green-700' : a.status === 'Retired' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>{a.status}</span>
+                      </div>
                     </div>
                     <div className="text-gray-500 text-xs">
                       {a.assetTypeName} &bull; {a.departmentName}
@@ -625,6 +651,22 @@ export default function AuthTestClient({
                     {a.highestSeverity && (
                       <div className={`text-xs mt-1 inline-block px-1 rounded ${a.highestSeverity === 'Critical' ? 'bg-red-100 text-red-700' : a.highestSeverity === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
                         CVSS: {a.highestCvssScore} ({a.highestSeverity})
+                      </div>
+                    )}
+                    {/* Scan Results */}
+                    {scanResults[a.id] && scanResults[a.id].matches?.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        <div className="text-xs font-medium text-gray-600">Last Scan: {scanResults[a.id].vulnerabilitiesFound} CVE(s)</div>
+                        {scanResults[a.id].matches.slice(0, 3).map((m: any, idx: number) => (
+                          <div key={idx} className="text-xs border-l-2 border-red-300 pl-2 py-0.5">
+                            <span className="font-mono font-semibold">{m.cveId}</span>
+                            <span className="text-gray-500 ml-1">({m.severity}, {m.cvssScore})</span>
+                            {m.matchedKeyword && <span className="text-blue-500 ml-1">matched: {m.matchedKeyword}</span>}
+                          </div>
+                        ))}
+                        {scanResults[a.id].matches.length > 3 && (
+                          <div className="text-xs text-gray-400">+{scanResults[a.id].matches.length - 3} more</div>
+                        )}
                       </div>
                     )}
                   </div>
