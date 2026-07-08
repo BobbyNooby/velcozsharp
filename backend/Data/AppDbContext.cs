@@ -21,6 +21,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<AssetVulnerability> AssetVulnerabilities => Set<AssetVulnerability>();
     public DbSet<ScanJob> ScanJobs => Set<ScanJob>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<UserOrganization> UserOrganizations => Set<UserOrganization>();
 
     public AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext? tenantContext = null)
         : base(options)
@@ -61,12 +62,33 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
         modelBuilder.Entity<AuditLog>()
             .HasQueryFilter(al => al.OrganizationId == CurrentOrganizationId);
 
-        // AppUser -> Organization
+        // AppUser -> Organization (legacy single-org, nullable for migration)
         modelBuilder.Entity<AppUser>()
             .HasOne(u => u.Organization)
             .WithMany(o => o.Users)
             .HasForeignKey(u => u.OrganizationId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .OnDelete(DeleteBehavior.Restrict)
+            .IsRequired(false);
+
+        // UserOrganization join table
+        modelBuilder.Entity<UserOrganization>()
+            .HasKey(uo => uo.Id);
+
+        modelBuilder.Entity<UserOrganization>()
+            .HasIndex(uo => new { uo.UserId, uo.OrganizationId })
+            .IsUnique();
+
+        modelBuilder.Entity<UserOrganization>()
+            .HasOne(uo => uo.User)
+            .WithMany()
+            .HasForeignKey(uo => uo.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<UserOrganization>()
+            .HasOne(uo => uo.Organization)
+            .WithMany(o => o.UserOrganizations)
+            .HasForeignKey(uo => uo.OrganizationId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // AssetVulnerability composite key
         modelBuilder.Entity<AssetVulnerability>()

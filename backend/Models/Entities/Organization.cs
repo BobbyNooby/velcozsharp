@@ -7,9 +7,11 @@ public class Organization
     public string? Description { get; set; }
     public string? NvdApiKey { get; set; }
     public bool IsActive { get; set; } = true;
+    public bool IsAiEnabled { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<AppUser> Users { get; set; } = [];
+    public List<UserOrganization> UserOrganizations { get; set; } = [];
     public List<Department> Departments { get; set; } = [];
     public List<AssetTypeDefinition> AssetTypes { get; set; } = [];
     public List<Asset> Assets { get; set; } = [];

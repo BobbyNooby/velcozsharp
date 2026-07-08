@@ -12,28 +12,18 @@ namespace backend.Controllers;
 [ApiController]
 [Route("api/asset-types")]
 [Authorize]
-public class AssetTypesController : ControllerBase
+public class AssetTypesController : TenantControllerBase
 {
-    private readonly AppDbContext _db;
-    private readonly UserManager<AppUser> _userManager;
-
     public AssetTypesController(AppDbContext db, UserManager<AppUser> userManager)
+        : base(db, userManager)
     {
-        _db = db;
-        _userManager = userManager;
-    }
-
-    private async Task<Guid> GetCurrentOrgIdAsync()
-    {
-        var user = await _userManager.GetUserAsync(User);
-        return user?.OrganizationId ?? Guid.Empty;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
 
         var types = await _db.AssetTypeDefinitions
             .Include(at => at.Fields)
@@ -69,7 +59,7 @@ public class AssetTypesController : ControllerBase
     public async Task<IActionResult> GetById(Guid id)
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
 
         var type = await _db.AssetTypeDefinitions
             .Include(at => at.Fields)
@@ -101,11 +91,15 @@ public class AssetTypesController : ControllerBase
         return Ok(type);
     }
 
-    [Authorize(Roles = RoleNames.Admin)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateAssetTypeRequest request)
     {
         var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
+        if (orgRole != RoleNames.Admin)
+            return Forbid();
 
         var assetType = new AssetTypeDefinition
         {
@@ -113,7 +107,7 @@ public class AssetTypesController : ControllerBase
             Name = request.Name,
             Description = request.Description,
             IconName = request.IconName,
-            OrganizationId = orgId,
+            OrganizationId = orgId.Value,
             IsActive = true,
             Fields = request.Fields.Select(f => new AssetTypeField
             {
@@ -153,12 +147,15 @@ public class AssetTypesController : ControllerBase
         });
     }
 
-    [Authorize(Roles = RoleNames.Admin)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAssetTypeRequest request)
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
+
+        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
+        if (orgRole != RoleNames.Admin)
+            return Forbid();
 
         var assetType = await _db.AssetTypeDefinitions
             .Include(at => at.Fields)
@@ -188,12 +185,15 @@ public class AssetTypesController : ControllerBase
         return NoContent();
     }
 
-    [Authorize(Roles = RoleNames.Admin)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
+
+        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
+        if (orgRole != RoleNames.Admin)
+            return Forbid();
 
         var assetType = await _db.AssetTypeDefinitions
             .FirstOrDefaultAsync(at => at.Id == id && at.IsActive);
@@ -202,7 +202,7 @@ public class AssetTypesController : ControllerBase
 
         // Find or create a fallback "Unknown" type so assets don't break
         var unknownType = await _db.AssetTypeDefinitions
-            .FirstOrDefaultAsync(at => at.Name == "Unknown" && at.IsActive);
+            .FirstOrDefaultAsync(at => at.Name == "Unknown" && at.OrganizationId == orgId.Value && at.IsActive);
 
         if (unknownType == null)
         {
@@ -211,7 +211,7 @@ public class AssetTypesController : ControllerBase
                 Id = Guid.NewGuid(),
                 Name = "Unknown",
                 Description = "Fallback type for assets whose original type was deleted.",
-                OrganizationId = orgId,
+                OrganizationId = orgId.Value,
                 IsActive = true,
                 Fields = []
             };
