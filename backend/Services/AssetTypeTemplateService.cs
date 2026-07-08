@@ -83,7 +83,7 @@ public class AssetTypeTemplateService : IAssetTypeTemplateService
                     new("hostname", "text", true, false),
                     new("operating_system", "text", true, true),
                     new("os_version", "text", true, true),
-                    new("kernel_version", "text", false, true),
+                    new("kernel_version", "text", false, false),
                     new("ip_address", "text", false, false),
                     new("cpu_cores", "number", false, false),
                     new("memory_gb", "number", false, false),
