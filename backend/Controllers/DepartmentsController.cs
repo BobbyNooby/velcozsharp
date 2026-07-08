@@ -12,28 +12,18 @@ namespace backend.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class DepartmentsController : ControllerBase
+public class DepartmentsController : TenantControllerBase
 {
-    private readonly AppDbContext _db;
-    private readonly UserManager<AppUser> _userManager;
-
     public DepartmentsController(AppDbContext db, UserManager<AppUser> userManager)
+        : base(db, userManager)
     {
-        _db = db;
-        _userManager = userManager;
-    }
-
-    private async Task<Guid> GetCurrentOrgIdAsync()
-    {
-        var user = await _userManager.GetUserAsync(User);
-        return user?.OrganizationId ?? Guid.Empty;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
 
         var departments = await _db.Departments
             .Select(d => new DepartmentResponse
@@ -51,7 +41,7 @@ public class DepartmentsController : ControllerBase
     public async Task<IActionResult> GetById(Guid id)
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
 
         var department = await _db.Departments
             .Where(d => d.Id == id)
@@ -67,17 +57,21 @@ public class DepartmentsController : ControllerBase
         return Ok(department);
     }
 
-    [Authorize(Roles = RoleNames.Admin)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateDepartmentRequest request)
     {
         var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
+        if (orgRole != RoleNames.Admin)
+            return Forbid();
 
         var department = new Department
         {
             Id = Guid.NewGuid(),
             Name = request.Name,
-            OrganizationId = orgId,
+            OrganizationId = orgId.Value,
             IsActive = true
         };
 
@@ -92,12 +86,15 @@ public class DepartmentsController : ControllerBase
         });
     }
 
-    [Authorize(Roles = RoleNames.Admin)]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateDepartmentRequest request)
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
+
+        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
+        if (orgRole != RoleNames.Admin)
+            return Forbid();
 
         var department = await _db.Departments.FirstOrDefaultAsync(d => d.Id == id);
         if (department == null) return NotFound();
@@ -108,12 +105,15 @@ public class DepartmentsController : ControllerBase
         return NoContent();
     }
 
-    [Authorize(Roles = RoleNames.Admin)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
+
+        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
+        if (orgRole != RoleNames.Admin)
+            return Forbid();
 
         var department = await _db.Departments.FirstOrDefaultAsync(d => d.Id == id);
         if (department == null) return NotFound();

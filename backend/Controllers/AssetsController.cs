@@ -13,23 +13,14 @@ namespace backend.Controllers;
 [ApiController]
 [Route("api/assets")]
 [Authorize]
-public class AssetsController : ControllerBase
+public class AssetsController : TenantControllerBase
 {
-    private readonly AppDbContext _db;
-    private readonly UserManager<AppUser> _userManager;
     private readonly IAssetValidationService _validation;
 
     public AssetsController(AppDbContext db, UserManager<AppUser> userManager, IAssetValidationService validation)
+        : base(db, userManager)
     {
-        _db = db;
-        _userManager = userManager;
         _validation = validation;
-    }
-
-    private async Task<Guid> GetCurrentOrgIdAsync()
-    {
-        var user = await _userManager.GetUserAsync(User);
-        return user?.OrganizationId ?? Guid.Empty;
     }
 
     [HttpGet]
@@ -40,7 +31,7 @@ public class AssetsController : ControllerBase
         [FromQuery] string? severity)
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
 
         var query = _db.Assets
             .Include(a => a.AssetType)
@@ -90,7 +81,7 @@ public class AssetsController : ControllerBase
     public async Task<IActionResult> GetById(Guid id)
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
 
         var asset = await _db.Assets
             .Include(a => a.AssetType)
@@ -126,15 +117,15 @@ public class AssetsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateAssetRequest request)
     {
         var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
 
         // Validate department belongs to org
-        _db.CurrentOrganizationId = orgId;
         var deptExists = await _db.Departments.AnyAsync(d => d.Id == request.DepartmentId && d.IsActive);
         if (!deptExists)
             return BadRequest(new { message = "Department not found or inactive." });
 
         // Validate properties against asset type schema
-        var (valid, error) = await _validation.ValidateAsync(request.AssetTypeId, orgId, request.Properties);
+        var (valid, error) = await _validation.ValidateAsync(request.AssetTypeId, orgId.Value, request.Properties);
         if (!valid)
             return BadRequest(new { message = error });
 
@@ -143,7 +134,7 @@ public class AssetsController : ControllerBase
             Id = Guid.NewGuid(),
             Name = request.Name,
             Description = request.Description,
-            OrganizationId = orgId,
+            OrganizationId = orgId.Value,
             AssetTypeId = request.AssetTypeId,
             DepartmentId = request.DepartmentId,
             Status = AssetStatus.Active,
@@ -175,7 +166,7 @@ public class AssetsController : ControllerBase
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAssetRequest request)
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
 
         var asset = await _db.Assets
             .FirstOrDefaultAsync(a => a.Id == id && a.Status != AssetStatus.Decommissioned);
@@ -188,7 +179,7 @@ public class AssetsController : ControllerBase
             return BadRequest(new { message = "Department not found or inactive." });
 
         // Validate properties against asset type schema
-        var (valid, error) = await _validation.ValidateAsync(asset.AssetTypeId, orgId, request.Properties);
+        var (valid, error) = await _validation.ValidateAsync(asset.AssetTypeId, orgId.Value, request.Properties);
         if (!valid)
             return BadRequest(new { message = error });
 
@@ -207,7 +198,7 @@ public class AssetsController : ControllerBase
     public async Task<IActionResult> Delete(Guid id)
     {
         var orgId = await GetCurrentOrgIdAsync();
-        _db.CurrentOrganizationId = orgId;
+        if (!orgId.HasValue) return Forbid();
 
         var asset = await _db.Assets
             .FirstOrDefaultAsync(a => a.Id == id && a.Status != AssetStatus.Decommissioned);

@@ -1,3 +1,4 @@
+using backend.Data;
 using backend.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -10,11 +11,13 @@ namespace backend.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
+    private readonly AppDbContext _db;
     private readonly UserManager<AppUser> _userManager;
     private readonly SignInManager<AppUser> _signInManager;
 
-    public AuthController(UserManager<AppUser> userManager, SignInManager<AppUser> signInManager)
+    public AuthController(AppDbContext db, UserManager<AppUser> userManager, SignInManager<AppUser> signInManager)
     {
+        _db = db;
         _userManager = userManager;
         _signInManager = signInManager;
     }
@@ -33,19 +36,13 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Invalid email or password" });
 
         var roles = await _userManager.GetRolesAsync(user);
-        var org = await _userManager.Users
-            .Where(u => u.Id == user.Id)
-            .Select(u => u.Organization)
-            .FirstOrDefaultAsync();
 
         return Ok(new
         {
             userId = user.Id,
             email = user.Email,
             displayName = user.DisplayName,
-            role = roles.FirstOrDefault(),
-            organizationId = user.OrganizationId,
-            organizationName = org?.Name
+            role = roles.FirstOrDefault()
         });
     }
 
@@ -64,10 +61,19 @@ public class AuthController : ControllerBase
         if (user == null) return Unauthorized();
 
         var roles = await _userManager.GetRolesAsync(user);
-        var org = await _userManager.Users
-            .Where(u => u.Id == user.Id)
-            .Select(u => u.Organization)
-            .FirstOrDefaultAsync();
+
+        // Fetch all org memberships for this user
+        var memberships = await _db.UserOrganizations
+            .Where(uo => uo.UserId == user.Id)
+            .Include(uo => uo.Organization)
+            .Select(uo => new
+            {
+                organizationId = uo.OrganizationId,
+                organizationName = uo.Organization.Name,
+                role = uo.Role,
+                isDefault = uo.IsDefault
+            })
+            .ToListAsync();
 
         return Ok(new
         {
@@ -75,8 +81,7 @@ public class AuthController : ControllerBase
             email = user.Email,
             displayName = user.DisplayName,
             role = roles.FirstOrDefault(),
-            organizationId = user.OrganizationId,
-            organizationName = org?.Name
+            organizations = memberships
         });
     }
 }
