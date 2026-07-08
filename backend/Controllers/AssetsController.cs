@@ -28,15 +28,23 @@ public class AssetsController : TenantControllerBase
         [FromQuery] Guid? departmentId,
         [FromQuery] Guid? assetTypeId,
         [FromQuery] AssetStatus? status,
-        [FromQuery] string? severity)
+        [FromQuery] string? severity,
+        [FromQuery] string? search,
+        [FromQuery] bool? hasVulnerabilities,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortOrder,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
 
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
         var query = _db.Assets
             .Include(a => a.AssetType)
             .Include(a => a.Department)
-            .Include(a => a.Vulnerabilities)
             .Where(a => a.Status != AssetStatus.Decommissioned)
             .AsQueryable();
 
@@ -52,8 +60,35 @@ public class AssetsController : TenantControllerBase
         if (!string.IsNullOrWhiteSpace(severity))
             query = query.Where(a => a.HighestSeverity == severity);
 
-        var assets = await query
-            .OrderByDescending(a => a.CreatedAt)
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(a => a.Name.ToLower().Contains(term));
+        }
+
+        if (hasVulnerabilities.HasValue)
+        {
+            query = hasVulnerabilities.Value
+                ? query.Where(a => a.Vulnerabilities.Any())
+                : query.Where(a => !a.Vulnerabilities.Any());
+        }
+
+        // Sorting
+        var descending = sortOrder?.ToLower() != "asc";
+        query = sortBy?.ToLower() switch
+        {
+            "name" => descending ? query.OrderByDescending(a => a.Name) : query.OrderBy(a => a.Name),
+            "cvss" => descending ? query.OrderByDescending(a => a.HighestCvssScore) : query.OrderBy(a => a.HighestCvssScore),
+            "vulncount" => descending ? query.OrderByDescending(a => a.Vulnerabilities.Count) : query.OrderBy(a => a.Vulnerabilities.Count),
+            "lastscanned" => descending ? query.OrderByDescending(a => a.LastScannedAt) : query.OrderBy(a => a.LastScannedAt),
+            _ => descending ? query.OrderByDescending(a => a.CreatedAt) : query.OrderBy(a => a.CreatedAt)
+        };
+
+        var totalCount = await query.CountAsync();
+
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(a => new AssetResponse
             {
                 Id = a.Id,
@@ -74,7 +109,15 @@ public class AssetsController : TenantControllerBase
             })
             .ToListAsync();
 
-        return Ok(assets);
+        var result = new PagedResult<AssetResponse>
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        };
+
+        return Ok(result);
     }
 
     [HttpGet("{id:guid}")]
