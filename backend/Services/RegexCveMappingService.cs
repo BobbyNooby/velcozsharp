@@ -192,7 +192,11 @@ public class RegexCveMappingService : ICveMappingService
     private static DateTime? ParseDate(string? dateString)
     {
         if (string.IsNullOrEmpty(dateString)) return null;
-        if (DateTime.TryParse(dateString, out var dt)) return dt;
+        if (DateTime.TryParse(dateString, out var dt))
+        {
+            // NVD dates are UTC but parsed as Unspecified — force UTC kind for PostgreSQL
+            return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        }
         return null;
     }
 }
