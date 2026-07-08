@@ -3,10 +3,13 @@ import AuthTestClient from "./AuthTestClient";
 
 const API = "http://localhost:5038/api";
 
-async function fetchWithAuth(path: string, cookieHeader: string) {
+async function fetchWithAuth(path: string, cookieHeader: string, orgId?: string) {
   try {
+    const headers: Record<string, string> = { Cookie: cookieHeader };
+    if (orgId) headers["X-Organization-Id"] = orgId;
+
     const res = await fetch(`${API}${path}`, {
-      headers: { Cookie: cookieHeader },
+      headers,
       cache: "no-store",
     });
     if (!res.ok) return null;
@@ -23,21 +26,24 @@ export default async function AuthTestPage() {
   // Always try to fetch session first
   const user = await fetchWithAuth("/auth/me", cookieHeader);
 
-  // Only fetch tenant data if user is authenticated
-  const [orgs, depts, assetTypes] = user
+  // Determine default org from user's memberships
+  const defaultOrg = user?.organizations?.find((o: any) => o.isDefault);
+  const defaultOrgId = defaultOrg?.organizationId;
+
+  // Only fetch tenant data if user is authenticated and has a default org
+  const [depts, assetTypes] = user && defaultOrgId
     ? await Promise.all([
-        fetchWithAuth("/organizations", cookieHeader),
-        fetchWithAuth("/departments", cookieHeader),
-        fetchWithAuth("/asset-types", cookieHeader),
+        fetchWithAuth("/departments", cookieHeader, defaultOrgId),
+        fetchWithAuth("/asset-types", cookieHeader, defaultOrgId),
       ])
-    : [null, null, null];
+    : [null, null];
 
   return (
     <AuthTestClient
       initialUser={user}
-      initialOrgs={orgs ?? []}
       initialDepts={depts ?? []}
       initialAssetTypes={assetTypes ?? []}
+      initialOrgId={defaultOrgId ?? ""}
     />
   );
 }

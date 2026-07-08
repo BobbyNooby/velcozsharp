@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 
 const API = "http://localhost:5038/api";
 
@@ -15,8 +15,12 @@ type User = {
   email: string;
   displayName: string;
   role: string;
-  organizationId: string;
-  organizationName: string;
+  organizations: Array<{
+    organizationId: string;
+    organizationName: string;
+    role: string;
+    isDefault: boolean;
+  }>;
 };
 
 type FieldDraft = {
@@ -28,23 +32,23 @@ type FieldDraft = {
 
 export default function AuthTestClient({
   initialUser,
-  initialOrgs,
   initialDepts,
   initialAssetTypes,
+  initialOrgId,
 }: {
   initialUser: User | null;
-  initialOrgs: any[];
   initialDepts: any[];
   initialAssetTypes: any[];
+  initialOrgId: string;
 }) {
   const [user, setUser] = useState<User | null>(initialUser);
+  const [currentOrgId, setCurrentOrgId] = useState<string>(initialOrgId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [rawCookies, setRawCookies] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const [orgs, setOrgs] = useState<any[]>(initialOrgs);
   const [depts, setDepts] = useState<any[]>(initialDepts);
   const [newDeptName, setNewDeptName] = useState("");
 
@@ -66,12 +70,38 @@ export default function AuthTestClient({
 
   const log = (msg: string) => setApiLog((prev) => [...prev.slice(-19), msg]);
 
+  // Wrapper that injects X-Organization-Id header on every request
+  const apiFetch = useCallback(
+    async (path: string, options?: RequestInit) => {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...(options?.headers as Record<string, string>),
+      };
+      if (currentOrgId) {
+        headers["X-Organization-Id"] = currentOrgId;
+      }
+
+      const res = await fetch(`${API}${path}`, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+      return res;
+    },
+    [currentOrgId]
+  );
+
   const fetchMe = async () => {
     try {
       const res = await fetch(`${API}/auth/me`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setUser(data);
+        // If no current org set, use default
+        if (!currentOrgId && data.organizations?.length > 0) {
+          const defaultOrg = data.organizations.find((o: any) => o.isDefault);
+          if (defaultOrg) setCurrentOrgId(defaultOrg.organizationId);
+        }
         setError("");
       } else {
         setUser(null);
@@ -100,9 +130,11 @@ export default function AuthTestClient({
         return;
       }
 
-      // After login, refresh all server-fetched data client-side
       await fetchMe();
-      await Promise.all([fetchOrgs(), fetchDepts(), fetchAssetTypes()]);
+      // Refresh tenant data after login
+      if (currentOrgId) {
+        await Promise.all([fetchDepts(), fetchAssetTypes()]);
+      }
     } catch {
       setError("Network error - is backend running on :5038?");
     }
@@ -115,7 +147,7 @@ export default function AuthTestClient({
       await fetch(`${API}/auth/logout`, { method: "POST", credentials: "include" });
     } catch {}
     setUser(null);
-    setOrgs([]);
+    setCurrentOrgId("");
     setDepts([]);
     setAssetTypes([]);
     setAssets([]);
@@ -129,20 +161,33 @@ export default function AuthTestClient({
     login(acc.email, acc.password);
   };
 
-  const fetchOrgs = async () => {
+  const switchOrg = async (orgId: string) => {
+    setCurrentOrgId(orgId);
+    // Direct fetch with new orgId to avoid stale closure on apiFetch
+    await Promise.all([
+      fetchForOrg("/departments", orgId, setDepts),
+      fetchForOrg("/asset-types", orgId, setAssetTypes),
+      fetchForOrg("/assets", orgId, setAssets),
+    ]);
+  };
+
+  const fetchForOrg = async (path: string, orgId: string, setter: (data: any) => void) => {
     try {
-      const res = await fetch(`${API}/organizations`, { credentials: "include" });
+      const res = await fetch(`${API}${path}`, {
+        headers: { "X-Organization-Id": orgId },
+        credentials: "include",
+      });
       const data = await res.json();
-      setOrgs(data);
-      log(`GET /organizations -> ${res.status}, ${data.length} items`);
+      setter(data);
+      log(`GET ${path} -> ${res.status}, ${data.length} items (org: ${orgId.slice(0, 8)})`);
     } catch (e) {
-      log(`GET /organizations -> ERROR`);
+      log(`GET ${path} -> ERROR`);
     }
   };
 
   const fetchDepts = async () => {
     try {
-      const res = await fetch(`${API}/departments`, { credentials: "include" });
+      const res = await apiFetch("/departments");
       const data = await res.json();
       setDepts(data);
       if (data.length > 0 && !newAssetDeptId) setNewAssetDeptId(data[0].id);
@@ -155,10 +200,8 @@ export default function AuthTestClient({
   const createDept = async () => {
     if (!newDeptName.trim()) return;
     try {
-      const res = await fetch(`${API}/departments`, {
+      const res = await apiFetch("/departments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ name: newDeptName }),
       });
       const data = await res.json();
@@ -174,7 +217,7 @@ export default function AuthTestClient({
 
   const fetchAssetTypes = async () => {
     try {
-      const res = await fetch(`${API}/asset-types`, { credentials: "include" });
+      const res = await apiFetch("/asset-types");
       const data = await res.json();
       setAssetTypes(data);
       if (data.length > 0 && !newAssetTypeId) setNewAssetTypeId(data[0].id);
@@ -199,10 +242,8 @@ export default function AuthTestClient({
       })),
     };
     try {
-      const res = await fetch(`${API}/asset-types`, {
+      const res = await apiFetch("/asset-types", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -237,10 +278,7 @@ export default function AuthTestClient({
   const deleteAssetType = async (id: string) => {
     if (!confirm("Delete this asset type? Assets using it will become 'Unknown'.")) return;
     try {
-      const res = await fetch(`${API}/asset-types/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const res = await apiFetch(`/asset-types/${id}`, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
       log(`DELETE /asset-types/${id} -> ${res.status}, ${data.message || ""}`);
       if (res.ok) fetchAssetTypes();
@@ -251,7 +289,7 @@ export default function AuthTestClient({
 
   const fetchAssets = async () => {
     try {
-      const res = await fetch(`${API}/assets`, { credentials: "include" });
+      const res = await apiFetch("/assets");
       const data = await res.json();
       setAssets(data);
       log(`GET /assets -> ${res.status}, ${data.length} items`);
@@ -279,10 +317,8 @@ export default function AuthTestClient({
       properties,
     };
     try {
-      const res = await fetch(`${API}/assets`, {
+      const res = await apiFetch("/assets", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -295,6 +331,9 @@ export default function AuthTestClient({
       log(`POST /assets -> ERROR`);
     }
   };
+
+  const currentOrgName = user?.organizations?.find((o) => o.organizationId === currentOrgId)?.organizationName ?? "No org selected";
+  const currentOrgRole = user?.organizations?.find((o) => o.organizationId === currentOrgId)?.role ?? "";
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">
@@ -356,24 +395,41 @@ export default function AuthTestClient({
             </div>
             <div className="text-xs space-y-1">
               <div>UserId: <span className="font-mono">{user.userId}</span></div>
-              <div>Org: {user.organizationName} ({user.organizationId})</div>
+              
+              {/* Org Switcher */}
+              {user.organizations && user.organizations.length > 0 && (
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-gray-500">Organization:</span>
+                  <select
+                    value={currentOrgId}
+                    onChange={(e) => switchOrg(e.target.value)}
+                    className="px-2 py-1 border text-sm rounded"
+                  >
+                    {user.organizations.map((org) => (
+                      <option key={org.organizationId} value={org.organizationId}>
+                        {org.organizationName} ({org.role})
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-gray-400 text-xs">X-Organization-Id: {currentOrgId}</span>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Organizations */}
           <div className="border p-4 space-y-2">
             <div className="flex justify-between items-center">
-              <h2 className="font-semibold">Organizations</h2>
-              <button onClick={fetchOrgs} className="px-2 py-1 bg-gray-200 text-sm rounded">Fetch</button>
+              <h2 className="font-semibold">Your Organizations</h2>
             </div>
-            {orgs.length === 0 ? (
-              <div className="text-gray-500 text-sm">No organizations loaded</div>
+            {user.organizations?.length === 0 ? (
+              <div className="text-gray-500 text-sm">No organizations</div>
             ) : (
               <div className="space-y-1">
-                {orgs.map((o) => (
-                  <div key={o.id} className="border p-2 text-sm">
-                    <span className="font-medium">{o.name}</span>
-                    <span className="text-gray-500 text-xs ml-2">{o.id}</span>
+                {user.organizations?.map((o) => (
+                  <div key={o.organizationId} className="border p-2 text-sm flex justify-between">
+                    <span className="font-medium">{o.organizationName}</span>
+                    <span className="text-gray-500 text-xs">{o.role} {o.isDefault && "(default)"}</span>
                   </div>
                 ))}
               </div>
@@ -383,11 +439,11 @@ export default function AuthTestClient({
           {/* Departments */}
           <div className="border p-4 space-y-2">
             <div className="flex justify-between items-center">
-              <h2 className="font-semibold">Departments</h2>
+              <h2 className="font-semibold">Departments ({currentOrgName})</h2>
               <button onClick={fetchDepts} className="px-2 py-1 bg-gray-200 text-sm rounded">Fetch</button>
             </div>
 
-            {user.role === "Admin" && (
+            {currentOrgRole === "Admin" && (
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -417,11 +473,11 @@ export default function AuthTestClient({
           {/* Asset Types */}
           <div className="border p-4 space-y-2">
             <div className="flex justify-between items-center">
-              <h2 className="font-semibold">Asset Types</h2>
+              <h2 className="font-semibold">Asset Types ({currentOrgName})</h2>
               <button onClick={fetchAssetTypes} className="px-2 py-1 bg-gray-200 text-sm rounded">Fetch</button>
             </div>
 
-            {user.role === "Admin" && (
+            {currentOrgRole === "Admin" && (
               <div className="space-y-2">
                 <div className="flex gap-2">
                   <input
@@ -494,7 +550,7 @@ export default function AuthTestClient({
                       <span className="font-medium">{t.name}</span>
                       <div className="flex gap-2">
                         <span className="text-gray-500 text-xs">{t.id}</span>
-                        {user.role === "Admin" && (
+                        {currentOrgRole === "Admin" && (
                           <button onClick={() => deleteAssetType(t.id)} className="text-xs text-red-600 hover:underline">Delete</button>
                         )}
                       </div>
@@ -514,11 +570,11 @@ export default function AuthTestClient({
           {/* Assets */}
           <div className="border p-4 space-y-2">
             <div className="flex justify-between items-center">
-              <h2 className="font-semibold">Assets</h2>
+              <h2 className="font-semibold">Assets ({currentOrgName})</h2>
               <button onClick={fetchAssets} className="px-2 py-1 bg-gray-200 text-sm rounded">Fetch</button>
             </div>
 
-            {user.role !== "Viewer" && (
+            {currentOrgRole !== "Viewer" && (
               <div className="space-y-2">
                 <div className="flex gap-2">
                   <input
