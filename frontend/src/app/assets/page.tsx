@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { useCurrentOrgId, useApiFetch } from "@/lib/api";
+import { useOrg, useApiFetch, useDebounce } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -46,8 +46,9 @@ const severityColors: Record<string, string> = {
 };
 
 export default function AssetsPage() {
-  const orgId = useCurrentOrgId();
-  const apiFetch = useApiFetch(orgId);
+  const { orgId } = useOrg();
+  const apiFetch = useApiFetch();
+  const mountedRef = useRef(true);
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -56,6 +57,7 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(false);
 
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState("");
   const [assetTypeFilter, setAssetTypeFilter] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
@@ -67,51 +69,66 @@ export default function AssetsPage() {
   const [assetTypes, setAssetTypes] = useState<Option[]>([]);
   const [departments, setDepartments] = useState<Option[]>([]);
 
-  const fetchFilters = useCallback(async () => {
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Fetch filter options once when org changes
+  useEffect(() => {
     if (!orgId) return;
-    try {
-      const [atRes, deptRes] = await Promise.all([
-        apiFetch("/asset-types"),
-        apiFetch("/departments"),
-      ]);
-      if (atRes.ok) setAssetTypes(await atRes.json());
-      if (deptRes.ok) setDepartments(await deptRes.json());
-    } catch {}
+    const controller = new AbortController();
+
+    Promise.all([
+      apiFetch("/asset-types", { signal: controller.signal }),
+      apiFetch("/departments", { signal: controller.signal }),
+    ])
+      .then(async ([atRes, deptRes]) => {
+        if (!mountedRef.current) return;
+        if (atRes.ok) setAssetTypes(await atRes.json());
+        if (deptRes.ok) setDepartments(await deptRes.json());
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
   }, [orgId, apiFetch]);
 
-  const fetchAssets = useCallback(async () => {
+  // Fetch assets when filters/page change
+  useEffect(() => {
     if (!orgId) return;
+    const controller = new AbortController();
     setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.set("page", String(page));
-      params.set("pageSize", String(pageSize));
-      params.set("sortBy", sortBy);
-      params.set("sortOrder", sortOrder);
-      if (search.trim()) params.set("search", search.trim());
-      if (statusFilter) params.set("status", statusFilter);
-      if (assetTypeFilter) params.set("assetTypeId", assetTypeFilter);
-      if (departmentFilter) params.set("departmentId", departmentFilter);
-      if (severityFilter) params.set("severity", severityFilter);
-      if (hasVulnsFilter) params.set("hasVulnerabilities", hasVulnsFilter);
 
-      const res = await apiFetch(`/assets?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setAssets(data.items ?? []);
-        setTotalCount(data.totalCount ?? 0);
-      }
-    } catch {}
-    setLoading(false);
-  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, search, statusFilter, assetTypeFilter, departmentFilter, severityFilter, hasVulnsFilter]);
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    params.set("sortBy", sortBy);
+    params.set("sortOrder", sortOrder);
+    if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
+    if (statusFilter && statusFilter !== " ") params.set("status", statusFilter);
+    if (assetTypeFilter && assetTypeFilter !== " ") params.set("assetTypeId", assetTypeFilter);
+    if (departmentFilter && departmentFilter !== " ") params.set("departmentId", departmentFilter);
+    if (severityFilter && severityFilter !== " ") params.set("severity", severityFilter);
+    if (hasVulnsFilter && hasVulnsFilter !== " ") params.set("hasVulnerabilities", hasVulnsFilter);
 
-  useEffect(() => {
-    fetchFilters();
-  }, [fetchFilters]);
+    apiFetch(`/assets?${params.toString()}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!mountedRef.current) return;
+        if (res.ok) {
+          const data = await res.json();
+          setAssets(data.items ?? []);
+          setTotalCount(data.totalCount ?? 0);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mountedRef.current) setLoading(false);
+      });
 
-  useEffect(() => {
-    fetchAssets();
-  }, [fetchAssets]);
+    return () => controller.abort();
+  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, debouncedSearch, statusFilter, assetTypeFilter, departmentFilter, severityFilter, hasVulnsFilter]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 

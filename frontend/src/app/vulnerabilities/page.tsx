@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useCurrentOrgId, useApiFetch } from "@/lib/api";
+import { useOrg, useApiFetch, useDebounce } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -56,8 +56,9 @@ const statusColors: Record<string, string> = {
 };
 
 export default function VulnerabilitiesPage() {
-  const orgId = useCurrentOrgId();
-  const apiFetch = useApiFetch(orgId);
+  const { orgId } = useOrg();
+  const apiFetch = useApiFetch();
+  const mountedRef = useRef(true);
 
   const [vulns, setVulns] = useState<Vuln[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -66,6 +67,7 @@ export default function VulnerabilitiesPage() {
   const [loading, setLoading] = useState(false);
 
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [severityFilter, setSeverityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [assetTypeFilter, setAssetTypeFilter] = useState("");
@@ -76,45 +78,60 @@ export default function VulnerabilitiesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
-  const fetchFilters = useCallback(async () => {
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Fetch asset types once when org changes
+  useEffect(() => {
     if (!orgId) return;
-    try {
-      const res = await apiFetch("/asset-types");
-      if (res.ok) setAssetTypes(await res.json());
-    } catch {}
+    const controller = new AbortController();
+
+    apiFetch("/asset-types", { signal: controller.signal })
+      .then(async (res) => {
+        if (!mountedRef.current) return;
+        if (res.ok) setAssetTypes(await res.json());
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
   }, [orgId, apiFetch]);
 
-  const fetchVulns = useCallback(async () => {
+  // Fetch vulnerabilities when filters/page change
+  useEffect(() => {
     if (!orgId) return;
+    const controller = new AbortController();
     setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.set("page", String(page));
-      params.set("pageSize", String(pageSize));
-      params.set("sortBy", sortBy);
-      params.set("sortOrder", sortOrder);
-      if (search.trim()) params.set("search", search.trim());
-      if (severityFilter) params.set("severity", severityFilter);
-      if (statusFilter) params.set("status", statusFilter);
-      if (assetTypeFilter) params.set("assetTypeId", assetTypeFilter);
+    setSelectedIds(new Set()); // clear selection on refresh
 
-      const res = await apiFetch(`/vulnerabilities?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setVulns(data.items ?? []);
-        setTotalCount(data.totalCount ?? 0);
-      }
-    } catch {}
-    setLoading(false);
-  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, search, severityFilter, statusFilter, assetTypeFilter]);
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    params.set("sortBy", sortBy);
+    params.set("sortOrder", sortOrder);
+    if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
+    if (severityFilter && severityFilter !== " ") params.set("severity", severityFilter);
+    if (statusFilter && statusFilter !== " ") params.set("status", statusFilter);
+    if (assetTypeFilter && assetTypeFilter !== " ") params.set("assetTypeId", assetTypeFilter);
 
-  useEffect(() => {
-    fetchFilters();
-  }, [fetchFilters]);
+    apiFetch(`/vulnerabilities?${params.toString()}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!mountedRef.current) return;
+        if (res.ok) {
+          const data = await res.json();
+          setVulns(data.items ?? []);
+          setTotalCount(data.totalCount ?? 0);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mountedRef.current) setLoading(false);
+      });
 
-  useEffect(() => {
-    fetchVulns();
-  }, [fetchVulns]);
+    return () => controller.abort();
+  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, debouncedSearch, severityFilter, statusFilter, assetTypeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
@@ -150,23 +167,27 @@ export default function VulnerabilitiesPage() {
         method: "PATCH",
         body: JSON.stringify({ vulnerabilityIds: Array.from(selectedIds), status: newStatus }),
       });
-      if (res.ok) {
+      if (res.ok && mountedRef.current) {
         setSelectedIds(new Set());
-        await fetchVulns();
+        // Trigger refresh by bumping a dummy state or just re-fetch
+        // We'll force a re-fetch by resetting page to same value (useEffect will run)
+        setPage((p) => p);
       }
     } catch {}
     setBulkLoading(false);
   };
 
   const updateSingleStatus = async (vulnId: string, newStatus: string) => {
-    // We need assetId for the single PATCH endpoint, but we don't have a direct single endpoint in VulnerabilitiesController
-    // For simplicity, we'll use bulk with a single ID
     try {
       const res = await apiFetch("/vulnerabilities/bulk-status", {
         method: "PATCH",
         body: JSON.stringify({ vulnerabilityIds: [vulnId], status: newStatus }),
       });
-      if (res.ok) await fetchVulns();
+      if (res.ok && mountedRef.current) {
+        setVulns((prev) =>
+          prev.map((v) => (v.vulnerabilityId === vulnId ? { ...v, status: newStatus } : v))
+        );
+      }
     } catch {}
   };
 

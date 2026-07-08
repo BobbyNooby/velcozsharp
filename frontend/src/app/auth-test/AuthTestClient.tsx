@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
+import { useOrg, useApiFetch } from "@/lib/api";
 
 const API = "http://localhost:5038/api";
 
@@ -41,8 +42,11 @@ export default function AuthTestClient({
   initialAssetTypes: any[];
   initialOrgId: string;
 }) {
+  const { orgId: currentOrgId, setOrgId } = useOrg();
+  const apiFetch = useApiFetch();
+  const mountedRef = useRef(true);
+
   const [user, setUser] = useState<User | null>(initialUser);
-  const [currentOrgId, setCurrentOrgId] = useState<string>(initialOrgId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [rawCookies, setRawCookies] = useState("");
@@ -70,28 +74,9 @@ export default function AuthTestClient({
 
   const [apiLog, setApiLog] = useState<string[]>([]);
 
-  const log = (msg: string) => setApiLog((prev) => [...prev.slice(-19), msg]);
-
-  // Wrapper that injects X-Organization-Id header on every request
-  const apiFetch = useCallback(
-    async (path: string, options?: RequestInit) => {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...(options?.headers as Record<string, string>),
-      };
-      if (currentOrgId) {
-        headers["X-Organization-Id"] = currentOrgId;
-      }
-
-      const res = await fetch(`${API}${path}`, {
-        ...options,
-        headers,
-        credentials: "include",
-      });
-      return res;
-    },
-    [currentOrgId]
-  );
+  const log = useCallback((msg: string) => {
+    if (mountedRef.current) setApiLog((prev) => [...prev.slice(-19), msg]);
+  }, []);
 
   const fetchMe = async () => {
     try {
@@ -99,10 +84,9 @@ export default function AuthTestClient({
       if (res.ok) {
         const data = await res.json();
         setUser(data);
-        // If no current org set, use default
         if (!currentOrgId && data.organizations?.length > 0) {
           const defaultOrg = data.organizations.find((o: any) => o.isDefault);
-          if (defaultOrg) setCurrentOrgId(defaultOrg.organizationId);
+          if (defaultOrg) setOrgId(defaultOrg.organizationId);
         }
         setError("");
       } else {
@@ -149,7 +133,7 @@ export default function AuthTestClient({
       await fetch(`${API}/auth/logout`, { method: "POST", credentials: "include" });
     } catch {}
     setUser(null);
-    setCurrentOrgId("");
+    setOrgId("");
     setDepts([]);
     setAssetTypes([]);
     setAssets([]);
@@ -163,13 +147,12 @@ export default function AuthTestClient({
     login(acc.email, acc.password);
   };
 
-  const switchOrg = async (orgId: string) => {
-    setCurrentOrgId(orgId);
-    // Direct fetch with new orgId to avoid stale closure on apiFetch
+  const switchOrg = async (newOrgId: string) => {
+    setOrgId(newOrgId);
     await Promise.all([
-      fetchForOrg("/departments", orgId, setDepts),
-      fetchForOrg("/asset-types", orgId, setAssetTypes),
-      fetchForOrg("/assets", orgId, setAssets),
+      fetchForOrg("/departments", newOrgId, setDepts),
+      fetchForOrg("/asset-types", newOrgId, setAssetTypes),
+      fetchForOrg("/assets", newOrgId, setAssets),
     ]);
   };
 

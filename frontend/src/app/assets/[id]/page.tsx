@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-
-const API = "http://localhost:5038/api";
+import { useOrg, useApiFetch } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 type Vulnerability = {
   id: string;
@@ -52,56 +53,49 @@ export default function AssetDetailPage() {
   const params = useParams();
   const router = useRouter();
   const assetId = params.id as string;
+  const { orgId } = useOrg();
+  const apiFetch = useApiFetch();
+  const mountedRef = useRef(true);
+  const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [asset, setAsset] = useState<Asset | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [currentOrgId, setCurrentOrgId] = useState<string>("");
 
-  const apiFetch = useCallback(
-    async (path: string, options?: RequestInit) => {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...(options?.headers as Record<string, string>),
-      };
-      if (currentOrgId) headers["X-Organization-Id"] = currentOrgId;
-      const res = await fetch(`${API}${path}`, { ...options, headers, credentials: "include" });
-      return res;
-    },
-    [currentOrgId]
-  );
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+    };
+  }, []);
 
-  const fetchMe = async () => {
-    try {
-      const res = await fetch(`${API}/auth/me`, { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.organizations?.length > 0) {
-          const defaultOrg = data.organizations.find((o: any) => o.isDefault);
-          if (defaultOrg) setCurrentOrgId(defaultOrg.organizationId);
-        }
-      }
-    } catch {}
-  };
-
-  const fetchAsset = async () => {
-    if (!assetId || !currentOrgId) return;
+  useEffect(() => {
+    if (!assetId || !orgId) return;
+    const controller = new AbortController();
     setLoading(true);
-    try {
-      const res = await apiFetch(`/assets/${assetId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setAsset(data);
-      } else if (res.status === 404) {
-        setMessage("Asset not found");
-      } else {
-        setMessage("Failed to load asset");
-      }
-    } catch {
-      setMessage("Network error");
-    }
-    setLoading(false);
-  };
+    setMessage("");
+
+    apiFetch(`/assets/${assetId}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!mountedRef.current) return;
+        if (res.ok) {
+          const data = await res.json();
+          setAsset(data);
+        } else if (res.status === 404) {
+          setMessage("Asset not found");
+        } else {
+          setMessage("Failed to load asset");
+        }
+      })
+      .catch(() => {
+        if (mountedRef.current) setMessage("Network error");
+      })
+      .finally(() => {
+        if (mountedRef.current) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [assetId, orgId, apiFetch]);
 
   const updateVulnStatus = async (vulnerabilityId: string, newStatus: string) => {
     try {
@@ -109,7 +103,7 @@ export default function AssetDetailPage() {
         method: "PATCH",
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) {
+      if (res.ok && mountedRef.current) {
         setMessage(`Status updated to ${newStatus}`);
         setAsset((prev) => {
           if (!prev || !prev.vulnerabilities) return prev;
@@ -120,12 +114,15 @@ export default function AssetDetailPage() {
             ),
           };
         });
-        setTimeout(() => setMessage(""), 2000);
-      } else {
+        if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+        messageTimerRef.current = setTimeout(() => {
+          if (mountedRef.current) setMessage("");
+        }, 2000);
+      } else if (mountedRef.current) {
         setMessage("Failed to update status");
       }
     } catch {
-      setMessage("Network error");
+      if (mountedRef.current) setMessage("Network error");
     }
   };
 
@@ -133,23 +130,20 @@ export default function AssetDetailPage() {
     setMessage("Scanning...");
     try {
       const res = await apiFetch(`/scan/assets/${assetId}`, { method: "POST" });
-      if (res.ok) {
+      if (res.ok && mountedRef.current) {
         const data = await res.json();
         setMessage(`Scan complete: ${data.vulnerabilitiesFound} CVE(s) found`);
-        await fetchAsset();
+        // Re-fetch asset to get updated vulnerabilities
+        const assetRes = await apiFetch(`/assets/${assetId}`);
+        if (assetRes.ok && mountedRef.current) {
+          const assetData = await assetRes.json();
+          setAsset(assetData);
+        }
       }
     } catch {
-      setMessage("Scan failed");
+      if (mountedRef.current) setMessage("Scan failed");
     }
   };
-
-  useEffect(() => {
-    fetchMe();
-  }, []);
-
-  useEffect(() => {
-    if (currentOrgId) fetchAsset();
-  }, [currentOrgId]);
 
   if (loading) {
     return (
@@ -163,12 +157,9 @@ export default function AssetDetailPage() {
     return (
       <div className="max-w-5xl mx-auto p-6">
         <div className="text-red-600">{message || "Asset not found"}</div>
-        <button
-          onClick={() => router.push("/cve-mapping")}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
-        >
+        <Button className="mt-4" onClick={() => router.push("/cve-mapping")}>
           Back to Dashboard
-        </button>
+        </Button>
       </div>
     );
   }
@@ -181,12 +172,9 @@ export default function AssetDetailPage() {
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <button
-            onClick={() => router.push("/cve-mapping")}
-            className="text-sm text-blue-600 hover:underline mb-2"
-          >
+          <Button variant="link" className="p-0 h-auto mb-2" onClick={() => router.push("/cve-mapping")}>
             &larr; Back to Dashboard
-          </button>
+          </Button>
           <h1 className="text-2xl font-bold">{asset.name}</h1>
           <div className="text-sm text-gray-600 mt-1">
             {asset.assetTypeName} &bull; {asset.departmentName} &bull;
@@ -203,12 +191,7 @@ export default function AssetDetailPage() {
             </span>
           </div>
         </div>
-        <button
-          onClick={scanAsset}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Rescan CVEs
-        </button>
+        <Button onClick={scanAsset}>Rescan CVEs</Button>
       </div>
 
       {message && (
