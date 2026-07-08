@@ -2,6 +2,7 @@ using backend.Data;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
+using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -14,9 +15,12 @@ namespace backend.Controllers;
 [Authorize]
 public class OrganizationsController : TenantControllerBase
 {
-    public OrganizationsController(AppDbContext db, UserManager<AppUser> userManager)
+    private readonly IAssetTypeTemplateService _templateService;
+
+    public OrganizationsController(AppDbContext db, UserManager<AppUser> userManager, IAssetTypeTemplateService templateService)
         : base(db, userManager)
     {
+        _templateService = templateService;
     }
 
     [HttpGet]
@@ -100,6 +104,9 @@ public class OrganizationsController : TenantControllerBase
         _db.UserOrganizations.Add(membership);
 
         await _db.SaveChangesAsync();
+
+        // Seed built-in asset type templates for the new org
+        await _templateService.SeedBuiltInTypesAsync(org.Id);
 
         return Ok(new OrganizationResponse
         {

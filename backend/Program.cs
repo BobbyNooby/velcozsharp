@@ -79,6 +79,11 @@ builder.Services.AddScoped<ITenantContext, CurrentUserContext>();
 
 // Validation services
 builder.Services.AddScoped<IAssetValidationService, AssetValidationService>();
+builder.Services.AddScoped<IAssetTypeTemplateService, AssetTypeTemplateService>();
+
+// NVD / Scan services
+builder.Services.AddHttpClient<INvdApiService, NvdApiService>();
+builder.Services.AddScoped<ICveMappingService, RegexCveMappingService>();
 
 // Controllers
 builder.Services.AddControllers();

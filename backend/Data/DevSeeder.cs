@@ -1,4 +1,5 @@
 using backend.Models.Entities;
+using backend.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,6 +13,7 @@ public static class DevSeeder
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var templateService = scope.ServiceProvider.GetRequiredService<IAssetTypeTemplateService>();
 
         // Only seed if admin doesn't exist
         if (await userManager.Users.AnyAsync(u => u.Email == "admin@test.com"))
@@ -40,6 +42,13 @@ public static class DevSeeder
         };
         db.Organizations.AddRange(orgs);
         await db.SaveChangesAsync();
+
+        // Seed built-in asset type templates for each org
+        foreach (var org in orgs)
+        {
+            await templateService.SeedBuiltInTypesAsync(org.Id);
+        }
+        Console.WriteLine("   Seeded built-in asset type templates for all orgs");
 
         // Create fake users with multi-org memberships
         var fakeUsers = new[]
