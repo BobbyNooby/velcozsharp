@@ -104,6 +104,18 @@ public class AssetsController : TenantControllerBase
                 HighestSeverity = a.HighestSeverity,
                 LastScannedAt = a.LastScannedAt,
                 VulnerabilityCount = a.Vulnerabilities.Count,
+                Vulnerabilities = a.Vulnerabilities.Select(av => new VulnerabilityResponse
+                {
+                    Id = av.VulnerabilityId,
+                    CveId = av.Vulnerability.CveId,
+                    Description = av.Vulnerability.Description,
+                    CvssScore = av.Vulnerability.CvssScore,
+                    Severity = av.Vulnerability.Severity,
+                    PublishedDate = av.Vulnerability.PublishedDate,
+                    DetectedAt = av.DetectedAt,
+                    Status = av.Status,
+                    MatchedKeyword = av.MatchedKeyword
+                }).ToList(),
                 CreatedAt = a.CreatedAt,
                 UpdatedAt = a.UpdatedAt
             })
@@ -111,6 +123,23 @@ public class AssetsController : TenantControllerBase
 
         if (asset == null) return NotFound();
         return Ok(asset);
+    }
+
+    [HttpPatch("{assetId:guid}/vulnerabilities/{vulnerabilityId:guid}/status")]
+    public async Task<IActionResult> UpdateVulnerabilityStatus(Guid assetId, Guid vulnerabilityId, [FromBody] UpdateVulnerabilityStatusRequest request)
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var link = await _db.AssetVulnerabilities
+            .FirstOrDefaultAsync(av => av.AssetId == assetId && av.VulnerabilityId == vulnerabilityId && av.OrganizationId == orgId.Value);
+
+        if (link == null) return NotFound();
+
+        link.Status = request.Status;
+        await _db.SaveChangesAsync();
+
+        return NoContent();
     }
 
     [HttpPost]

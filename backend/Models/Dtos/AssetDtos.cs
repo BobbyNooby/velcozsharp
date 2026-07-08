@@ -40,7 +40,26 @@ public class AssetResponse
     public DateTime? LastScannedAt { get; set; }
 
     public int VulnerabilityCount { get; set; }
+    public List<VulnerabilityResponse>? Vulnerabilities { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+public class VulnerabilityResponse
+{
+    public Guid Id { get; set; }
+    public string CveId { get; set; } = "";
+    public string? Description { get; set; }
+    public double? CvssScore { get; set; }
+    public string? Severity { get; set; }
+    public DateTime? PublishedDate { get; set; }
+    public DateTime DetectedAt { get; set; }
+    public string Status { get; set; } = "Active";
+    public string? MatchedKeyword { get; set; }
+}
+
+public class UpdateVulnerabilityStatusRequest
+{
+    public string Status { get; set; } = "";
 }
