@@ -14,23 +14,28 @@ export type Org = {
 type OrgContextValue = {
   orgId: string;
   orgs: Org[];
+  authReady: boolean;
   setOrgId: (id: string) => void;
   setOrgs: (orgs: Org[]) => void;
+  setAuthReady: (ready: boolean) => void;
 };
 
 const OrgContext = createContext<OrgContextValue>({
   orgId: "",
   orgs: [],
+  authReady: false,
   setOrgId: () => {},
   setOrgs: () => {},
+  setAuthReady: () => {},
 });
 
 export function OrgProvider({ children }: { children: React.ReactNode }) {
   const [orgId, setOrgId] = useState<string>("");
   const [orgs, setOrgs] = useState<Org[]>([]);
+  const [authReady, setAuthReady] = useState(false);
 
   return (
-    <OrgContext.Provider value={{ orgId, orgs, setOrgId, setOrgs }}>
+    <OrgContext.Provider value={{ orgId, orgs, authReady, setOrgId, setOrgs, setAuthReady }}>
       {children}
     </OrgContext.Provider>
   );
@@ -64,17 +69,15 @@ export function useApiFetch() {
 
 /**
  * Fetch /auth/me once, populate org context, and return user data.
- * Guards against double-fetch and unmounted state updates.
+ * Uses authReady state (not a ref) so React Strict Mode remounts work correctly.
  */
 export function useAuthSession() {
-  const { orgId, orgs, setOrgId, setOrgs } = useOrg();
+  const { orgId, orgs, authReady, setOrgId, setOrgs, setAuthReady } = useOrg();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const fetchedRef = useRef(false);
 
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    if (authReady) return; // already initialized
 
     let cancelled = false;
 
@@ -101,15 +104,18 @@ export function useAuthSession() {
       })
       .catch(() => {})
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setAuthReady(true);
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [orgId, setOrgId, setOrgs]);
+  }, [authReady, orgId, setOrgId, setOrgs, setAuthReady]);
 
-  return { user, loading, orgId, orgs, setOrgId };
+  return { user, loading, orgId, orgs, authReady, setOrgId };
 }
 
 /**

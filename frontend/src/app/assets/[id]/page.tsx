@@ -53,7 +53,7 @@ export default function AssetDetailPage() {
   const params = useParams();
   const router = useRouter();
   const assetId = params.id as string;
-  const { orgId } = useOrg();
+  const { orgId, authReady } = useOrg();
   const apiFetch = useApiFetch();
   const mountedRef = useRef(true);
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,6 +63,7 @@ export default function AssetDetailPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
@@ -145,7 +146,7 @@ export default function AssetDetailPage() {
     }
   };
 
-  if (loading) {
+  if (loading || !authReady) {
     return (
       <div className="max-w-5xl mx-auto p-6">
         <div className="text-gray-500">Loading asset...</div>

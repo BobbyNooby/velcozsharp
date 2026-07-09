@@ -56,7 +56,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function VulnerabilitiesPage() {
-  const { orgId } = useOrg();
+  const { orgId, authReady } = useOrg();
   const apiFetch = useApiFetch();
   const mountedRef = useRef(true);
 
@@ -79,6 +79,7 @@ export default function VulnerabilitiesPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
@@ -337,14 +338,14 @@ export default function VulnerabilitiesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && (
+            {(loading || !authReady) && (
               <TableRow>
                 <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                   Loading...
                 </TableCell>
               </TableRow>
             )}
-            {!loading && vulns.length === 0 && (
+            {authReady && !loading && vulns.length === 0 && (
               <TableRow>
                 <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                   No vulnerabilities found

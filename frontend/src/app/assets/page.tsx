@@ -46,7 +46,7 @@ const severityColors: Record<string, string> = {
 };
 
 export default function AssetsPage() {
-  const { orgId } = useOrg();
+  const { orgId, authReady } = useOrg();
   const apiFetch = useApiFetch();
   const mountedRef = useRef(true);
 
@@ -71,6 +71,7 @@ export default function AssetsPage() {
 
   // Cleanup on unmount
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
@@ -280,14 +281,14 @@ export default function AssetsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && (
+            {(loading || !authReady) && (
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                   Loading...
                 </TableCell>
               </TableRow>
             )}
-            {!loading && assets.length === 0 && (
+            {authReady && !loading && assets.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                   No assets found

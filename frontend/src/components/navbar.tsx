@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useOrg } from "@/lib/api";
+import { useOrg, useAuthSession } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -24,6 +24,9 @@ const navLinks = [
 export default function Navbar() {
   const pathname = usePathname();
   const { orgId, orgs, setOrgId } = useOrg();
+
+  // Initialize auth session / org context once on mount
+  useAuthSession();
 
   return (
     <nav className="border-b bg-background sticky top-0 z-50">
