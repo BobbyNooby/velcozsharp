@@ -21,6 +21,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<AssetVulnerability> AssetVulnerabilities => Set<AssetVulnerability>();
     public DbSet<ScanJob> ScanJobs => Set<ScanJob>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<RecurringScanConfig> RecurringScanConfigs => Set<RecurringScanConfig>();
     public DbSet<UserOrganization> UserOrganizations => Set<UserOrganization>();
 
     public AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext? tenantContext = null)
@@ -61,6 +62,16 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
 
         modelBuilder.Entity<AuditLog>()
             .HasQueryFilter(al => al.OrganizationId == CurrentOrganizationId);
+
+        modelBuilder.Entity<RecurringScanConfig>()
+            .HasQueryFilter(rc => rc.OrganizationId == CurrentOrganizationId);
+
+        modelBuilder.Entity<RecurringScanConfig>()
+            .Property(rc => rc.TargetAssetIds)
+            .HasColumnType("uuid[]");
+
+        modelBuilder.Entity<RecurringScanConfig>()
+            .HasIndex(rc => new { rc.OrganizationId, rc.Enabled });
 
         // AppUser -> Organization (legacy single-org, nullable for migration)
         modelBuilder.Entity<AppUser>()

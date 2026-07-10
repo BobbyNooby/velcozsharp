@@ -17,4 +17,5 @@ public class Organization
     public List<Asset> Assets { get; set; } = [];
     public List<ScanJob> ScanJobs { get; set; } = [];
     public List<AuditLog> AuditLogs { get; set; } = [];
+    public List<RecurringScanConfig> ScanSchedules { get; set; } = [];
 }

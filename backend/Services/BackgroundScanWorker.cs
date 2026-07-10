@@ -2,6 +2,7 @@ using backend.Data;
 using backend.Models.Entities;
 using backend.Models.Enums;
 using backend.Services;
+using Cronos;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services;
@@ -17,6 +18,8 @@ public class BackgroundScanWorker : BackgroundService
         _logger = logger;
     }
 
+    private DateTime _lastScheduleCheck = DateTime.MinValue;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("BackgroundScanWorker started");
@@ -28,6 +31,7 @@ public class BackgroundScanWorker : BackgroundService
         {
             try
             {
+                // Process queued scan jobs
                 await ProcessNextJobAsync(stoppingToken);
             }
             catch (Exception ex)
@@ -35,9 +39,96 @@ public class BackgroundScanWorker : BackgroundService
                 _logger.LogError(ex, "Error processing scan job");
             }
 
+            // Check for due schedules every 60 seconds
+            if (DateTime.UtcNow - _lastScheduleCheck > TimeSpan.FromMinutes(1))
+            {
+                try
+                {
+                    await EnqueueDueSchedulesAsync(stoppingToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error checking due schedules");
+                }
+            }
+
             // Poll every 3 seconds for new jobs
             await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
         }
+    }
+
+    private async Task EnqueueDueSchedulesAsync(CancellationToken ct)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Get all enabled schedules across all orgs
+        var schedules = await db.RecurringScanConfigs
+            .IgnoreQueryFilters()
+            .Where(s => s.Enabled)
+            .ToListAsync(ct);
+
+        var now = DateTime.UtcNow;
+
+        foreach (var schedule in schedules)
+        {
+            try
+            {
+                var cron = Cronos.CronExpression.Parse(schedule.CronExpression);
+                var sinceTime = schedule.LastRunAt ?? schedule.CreatedAt;
+                var nextUtc = cron.GetNextOccurrence(sinceTime, TimeZoneInfo.Utc);
+
+                // Fire if:
+                // 1. Schedule was never run and first occurrence is in the past (catch up)
+                // 2. OR the next occurrence is due now or within the last 2 minutes
+                var isFirstRun = schedule.LastRunAt == null;
+                var isDue = nextUtc.HasValue && nextUtc.Value <= now;
+
+                if (!isDue)
+                    continue;
+
+                if (!isFirstRun && (now - nextUtc.Value).TotalMinutes > 2)
+                    continue; // Missed the window, wait for next cycle
+                {
+                    // Determine target assets
+                    List<Guid>? targetIds = null;
+                    if (schedule.Scope == ScanJobType.Bulk && schedule.TargetAssetIds?.Count > 0)
+                    {
+                        targetIds = schedule.TargetAssetIds;
+                    }
+                    else if (schedule.Scope == ScanJobType.Single && schedule.TargetAssetIds?.Count == 1)
+                    {
+                        targetIds = schedule.TargetAssetIds;
+                    }
+
+                    var job = new ScanJob
+                    {
+                        Id = Guid.NewGuid(),
+                        OrganizationId = schedule.OrganizationId,
+                        Type = schedule.Scope,
+                        Status = ScanJobStatus.Queued,
+                        TargetAssetIds = targetIds,
+                        TotalAssets = 0, // Will be filled when processed
+                        CreatedAt = now
+                    };
+
+                    db.ScanJobs.Add(job);
+                    schedule.LastRunAt = nextUtc.Value;
+                    schedule.UpdatedAt = now;
+
+                    _logger.LogInformation(
+                        "Scheduled scan job {JobId} from schedule {ScheduleId} ({ScheduleName}) for org {OrgId}",
+                        job.Id, schedule.Id, schedule.Name, schedule.OrganizationId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to process schedule {ScheduleId}", schedule.Id);
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        _lastScheduleCheck = now;
     }
 
     private async Task ResetStuckJobsAsync(CancellationToken ct)

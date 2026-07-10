@@ -17,6 +17,7 @@ const navLinks = [
   { href: "/assets", label: "Assets" },
   { href: "/vulnerabilities", label: "CVEs" },
   { href: "/cve-mapping", label: "Scan" },
+  { href: "/settings/scan-schedules", label: "Schedules" },
   { href: "/dev-tools", label: "Dev Tools" },
 ];
 
