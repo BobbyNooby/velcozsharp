@@ -38,6 +38,7 @@ export default function DevToolsPage() {
         setAssets(data.items ?? []);
       }
     });
+    fetchAuditLogs();
   }, [orgId, apiFetch]);
 
   const loginAsAdmin = async () => {
