@@ -1,6 +1,7 @@
 using backend.Data;
 using backend.Models.Dtos;
 using backend.Models.Entities;
+using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -37,9 +38,12 @@ public class VulnerabilityListItemResponse
 [Authorize]
 public class VulnerabilitiesController : TenantControllerBase
 {
-    public VulnerabilitiesController(AppDbContext db, UserManager<AppUser> userManager)
+    private readonly IAuditLogService _audit;
+
+    public VulnerabilitiesController(AppDbContext db, UserManager<AppUser> userManager, IAuditLogService audit)
         : base(db, userManager)
     {
+        _audit = audit;
     }
 
     [HttpGet]
@@ -136,9 +140,19 @@ public class VulnerabilitiesController : TenantControllerBase
 
         var ids = request.VulnerabilityIds.Distinct().ToList();
 
+        // Get CVE IDs for audit logging
+        var cveIds = await _db.AssetVulnerabilities
+            .Where(av => ids.Contains(av.VulnerabilityId) && av.OrganizationId == orgId.Value)
+            .Select(av => av.Vulnerability.CveId)
+            .ToListAsync();
+
         await _db.AssetVulnerabilities
             .Where(av => ids.Contains(av.VulnerabilityId) && av.OrganizationId == orgId.Value)
             .ExecuteUpdateAsync(setters => setters.SetProperty(av => av.Status, request.Status));
+
+        await _audit.LogAsync("VulnerabilityBulkStatusChanged", "Vulnerability", string.Join(",", cveIds.Take(5)),
+            $"{{\"count\":{ids.Count},\"oldStatus\":\"various\"}}",
+            $"{{\"count\":{ids.Count},\"newStatus\":\"{request.Status}\"}}");
 
         return NoContent();
     }

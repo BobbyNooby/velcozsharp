@@ -16,6 +16,7 @@ public class ScanJob
     public int TotalAssets { get; set; }
     public int ProcessedAssets { get; set; }
     public int NewVulnerabilitiesFound { get; set; }
+    public string? CurrentAssetName { get; set; }
     public string? ErrorMessage { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

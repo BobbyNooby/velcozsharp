@@ -85,6 +85,12 @@ builder.Services.AddScoped<IAssetTypeTemplateService, AssetTypeTemplateService>(
 builder.Services.AddHttpClient<INvdApiService, NvdApiService>();
 builder.Services.AddScoped<ICveMappingService, RegexCveMappingService>();
 
+// Audit logging
+builder.Services.AddScoped<IAuditLogService, AuditLogService>();
+
+// Background worker for async scan jobs
+builder.Services.AddHostedService<BackgroundScanWorker>();
+
 // Controllers
 builder.Services.AddControllers();
 

@@ -16,9 +16,8 @@ const navLinks = [
   { href: "/", label: "Home" },
   { href: "/assets", label: "Assets" },
   { href: "/vulnerabilities", label: "CVEs" },
-  { href: "/cve-mapping", label: "Dashboard" },
-  { href: "/auth-test", label: "Auth Test" },
-  { href: "/nvd-test", label: "NVD Test" },
+  { href: "/cve-mapping", label: "Scan" },
+  { href: "/dev-tools", label: "Dev Tools" },
 ];
 
 export default function Navbar() {

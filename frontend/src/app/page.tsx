@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useOrg, useApiFetch } from "@/lib/api";
+import { useJobs } from "@/lib/jobs";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,11 +40,11 @@ const severityColors: Record<string, string> = {
 export default function DashboardPage() {
   const { orgId, authReady } = useOrg();
   const apiFetch = useApiFetch();
+  const { activeJobs, trackJob } = useJobs();
   const mountedRef = useRef(true);
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [scanning, setScanning] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -75,24 +76,30 @@ export default function DashboardPage() {
   }, [orgId, apiFetch]);
 
   const scanAll = async () => {
-    setScanning(true);
-    setMessage("Scanning all assets...");
+    setMessage("Queueing scan all assets...");
     try {
       const res = await apiFetch("/scan/assets/all", { method: "POST" });
       if (res.ok && mountedRef.current) {
         const data = await res.json();
-        setMessage(`Scanned ${data.totalAssets} assets, found ${data.totalVulnerabilitiesFound} CVEs`);
-        // Refresh stats
-        const statsRes = await apiFetch("/dashboard/stats");
-        if (statsRes.ok && mountedRef.current) {
-          setStats(await statsRes.json());
-        }
+        trackJob(data.jobId);
+        setMessage(`Scan job ${data.jobId.slice(0, 8)} queued (${data.totalAssets} assets)`);
       }
     } catch {
       if (mountedRef.current) setMessage("Scan failed");
     }
-    setScanning(false);
   };
+
+  // Refresh dashboard stats when active jobs complete
+  useEffect(() => {
+    if (activeJobs.length === 0) {
+      apiFetch("/dashboard/stats").then(async (res) => {
+        if (res.ok && mountedRef.current) {
+          setStats(await res.json());
+          setMessage("");
+        }
+      });
+    }
+  }, [activeJobs.length, apiFetch]);
 
   if (loading || !authReady) {
     return (
@@ -128,8 +135,8 @@ export default function DashboardPage() {
         <div className="flex gap-2">
           <Link href="/assets" className={cn(buttonVariants({ variant: "outline" }))}>View Assets</Link>
           <Link href="/vulnerabilities" className={cn(buttonVariants({ variant: "outline" }))}>View CVEs</Link>
-          <Button onClick={scanAll} disabled={scanning} className="bg-red-600 hover:bg-red-700">
-            {scanning ? "Scanning..." : "Scan All Assets"}
+          <Button onClick={scanAll} disabled={activeJobs.length > 0} className="bg-red-600 hover:bg-red-700">
+            {activeJobs.length > 0 ? `${activeJobs.length} Job(s) Running...` : "Scan All Assets"}
           </Button>
         </div>
       </div>
