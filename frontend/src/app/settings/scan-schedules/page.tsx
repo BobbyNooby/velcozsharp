@@ -21,8 +21,6 @@ type ScanSchedule = {
 
 const SCOPE_LABELS: Record<string, string> = {
   All: "All Assets",
-  Bulk: "Selected Assets",
-  Single: "Single Asset",
 };
 
 const CRON_PRESETS = [
@@ -50,8 +48,6 @@ export default function ScanSchedulesPage() {
   const [formName, setFormName] = useState("");
   const [formCron, setFormCron] = useState("0 2 * * *");
   const [formPreset, setFormPreset] = useState("0 2 * * *");
-  const [formScope, setFormScope] = useState("All");
-
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
@@ -81,7 +77,6 @@ export default function ScanSchedulesPage() {
     setFormName("");
     setFormCron("0 2 * * *");
     setFormPreset("0 2 * * *");
-    setFormScope("All");
   };
 
   const startEdit = (s: ScanSchedule) => {
@@ -89,14 +84,13 @@ export default function ScanSchedulesPage() {
     setFormName(s.name);
     setFormCron(s.cronExpression);
     setFormPreset(s.cronExpression);
-    setFormScope(s.scope);
     setShowForm(true);
   };
 
   const save = async () => {
     if (!formName.trim()) { setMessage("Name is required"); return; }
 
-    const body = { name: formName, cronExpression: formCron, scope: formScope };
+    const body = { name: formName, cronExpression: formCron, scope: "All" };
 
     try {
       let res;
@@ -214,14 +208,13 @@ export default function ScanSchedulesPage() {
             </div>
             <div>
               <label className="text-sm font-medium">Scope</label>
-              <select
-                value={formScope}
-                onChange={(e) => setFormScope(e.target.value)}
-                className="border rounded px-2 py-1 text-sm w-full"
-              >
-                <option value="All">All Assets</option>
-                <option value="Single">Single Asset</option>
-              </select>
+              <input
+                type="text"
+                value="All Assets"
+                disabled
+                className="border rounded px-2 py-1 text-sm w-full bg-gray-50 text-gray-500"
+              />
+              <input type="hidden" value="All" />
             </div>
             <div className="flex gap-2">
               <Button onClick={save}>{editId ? "Update" : "Create"}</Button>

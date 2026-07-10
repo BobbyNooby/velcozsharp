@@ -1,7 +1,7 @@
 # VelcozSharp Architecture
 
 > Project overview and technical architecture for contributors and AI agents.
-> Last updated: 2026-07-10
+> Last updated: 2026-07-10 (planning docs in `planning/` — local only, not committed)
 
 ---
 
@@ -65,6 +65,7 @@ backend/
 | `ScanController` | Queue async scan jobs, read job status |
 | `DashboardController` | Aggregate stats for homepage |
 | `SeedController` | Demo data seeder |
+| `ScanScheduleController` | CRUD for recurring scan schedules |
 | `AuditLogsController` | Read audit trail |
 
 ### Key Services
@@ -128,6 +129,16 @@ ScanJob
   ├── ProcessedAssets
   ├── CurrentAssetName
   └── NewVulnerabilitiesFound
+
+RecurringScanConfig
+  ├── OrganizationId
+  ├── Name
+  ├── CronExpression
+  ├── Scope (All/Bulk/Single)
+  ├── TargetAssetIds (for Bulk scope)
+  ├── Enabled
+  ├── LastRunAt
+  └── CreatedAt/UpdatedAt
 
 AuditLog
   ├── OrganizationId
@@ -275,6 +286,11 @@ The same CVE (e.g., CVE-2024-XXXX) can affect many assets. Storing it once saves
 - `GET /api/dashboard/stats`
 - `GET /api/audit-logs`
 
+### Scan Schedules
+- `GET/POST /api/scan-schedules`
+- `GET /api/scan-schedules/{id}`
+- `PATCH/DELETE /api/scan-schedules/{id}`
+
 ### Seeding
 - `POST /api/seed/demo-assets`
 
@@ -307,6 +323,11 @@ npx kill-port 3000
 - Advanced RBAC beyond Admin/Member
 - Multi-instance scaling
 - CISA KEV / EPSS enrichment
-- Email/SMS notifications
+- SMS notifications
+- CSV Export (scheduled)
+- Asset Tags & Criticality (scheduled)
+- Org Settings & User Preferences (scheduled)
 
-These are documented in `planning/WORKPLAN.md` and `planning/ROADMAP.md` for future reference.
+## Future Improvements
+
+Small enhancements and polish items for each feature are tracked in [`planning/FUTURE-IMPROVEMENTS.md`](./planning/FUTURE-IMPROVEMENTS.md) (local only, not committed). Noted during initial development and deferred to keep iteration speed high.
