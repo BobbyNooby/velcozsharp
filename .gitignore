@@ -18,6 +18,7 @@ $RECYCLE.BIN/
 # ----------------------------------------
 .vs/
 .vscode/
+.zed/
 .idea/
 *.swp
 *.swo
