@@ -10,30 +10,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace backend.Controllers;
 
-public class BulkUpdateVulnerabilityStatusRequest
-{
-    public List<Guid> VulnerabilityIds { get; set; } = [];
-    public string Status { get; set; } = "";
-}
-
-public class VulnerabilityListItemResponse
-{
-    public Guid AssetId { get; set; }
-    public string AssetName { get; set; } = "";
-    public string AssetTypeName { get; set; } = "";
-
-    public Guid VulnerabilityId { get; set; }
-    public string CveId { get; set; } = "";
-    public string? Description { get; set; }
-    public double? CvssScore { get; set; }
-    public string? Severity { get; set; }
-    public DateTime? PublishedDate { get; set; }
-
-    public DateTime DetectedAt { get; set; }
-    public string Status { get; set; } = "Active";
-    public string? MatchedKeyword { get; set; }
-}
-
 [ApiController]
 [Route("api/vulnerabilities")]
 [Authorize]

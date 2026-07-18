@@ -1,5 +1,6 @@
 using backend.Data;
 using backend.Infrastructure.Pagination;
+using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -8,18 +9,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend.Controllers;
-
-public class AuditLogResponse
-{
-    public Guid Id { get; set; }
-    public string Action { get; set; } = "";
-    public string EntityType { get; set; } = "";
-    public string EntityId { get; set; } = "";
-    public string? BeforeJson { get; set; }
-    public string? AfterJson { get; set; }
-    public string? ChangedByUserId { get; set; }
-    public DateTime Timestamp { get; set; }
-}
 
 [ApiController]
 [Route("api/audit-logs")]
