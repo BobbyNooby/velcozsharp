@@ -1,7 +1,9 @@
 using backend.Data;
+using backend.Infrastructure.Mapping;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
+using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -14,9 +16,12 @@ namespace backend.Controllers;
 [Authorize]
 public class AssetTypesController : TenantControllerBase
 {
-    public AssetTypesController(AppDbContext db, UserManager<AppUser> userManager)
+    private readonly IAssetTypeTemplateService _templateService;
+
+    public AssetTypesController(AppDbContext db, UserManager<AppUser> userManager, IAssetTypeTemplateService templateService)
         : base(db, userManager)
     {
+        _templateService = templateService;
     }
 
     [HttpGet]
@@ -29,30 +34,9 @@ public class AssetTypesController : TenantControllerBase
             .Include(at => at.Fields)
             .Where(at => at.IsActive)
             .OrderBy(at => at.Name)
-            .Select(at => new AssetTypeResponse
-            {
-                Id = at.Id,
-                Name = at.Name,
-                Description = at.Description,
-                IconName = at.IconName,
-                IsActive = at.IsActive,
-                Fields = at.Fields
-                    .OrderBy(f => f.DisplayOrder)
-                    .Select(f => new AssetTypeFieldResponse
-                    {
-                        Id = f.Id,
-                        Name = f.Name,
-                        DataType = f.DataType,
-                        IsRequired = f.IsRequired,
-                        IsCveSearchable = f.IsCveSearchable,
-                        DisplayOrder = f.DisplayOrder,
-                        DefaultValue = f.DefaultValue
-                    })
-                    .ToList()
-            })
             .ToListAsync();
 
-        return Ok(types);
+        return Ok(types.Select(at => at.ToResponse()).ToList());
     }
 
     [HttpGet("{id:guid}")]
@@ -64,42 +48,20 @@ public class AssetTypesController : TenantControllerBase
         var type = await _db.AssetTypeDefinitions
             .Include(at => at.Fields)
             .Where(at => at.Id == id && at.IsActive)
-            .Select(at => new AssetTypeResponse
-            {
-                Id = at.Id,
-                Name = at.Name,
-                Description = at.Description,
-                IconName = at.IconName,
-                IsActive = at.IsActive,
-                Fields = at.Fields
-                    .OrderBy(f => f.DisplayOrder)
-                    .Select(f => new AssetTypeFieldResponse
-                    {
-                        Id = f.Id,
-                        Name = f.Name,
-                        DataType = f.DataType,
-                        IsRequired = f.IsRequired,
-                        IsCveSearchable = f.IsCveSearchable,
-                        DisplayOrder = f.DisplayOrder,
-                        DefaultValue = f.DefaultValue
-                    })
-                    .ToList()
-            })
             .FirstOrDefaultAsync();
 
         if (type == null) return NotFound();
-        return Ok(type);
+        return Ok(type.ToResponse());
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateAssetTypeRequest request)
     {
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
-
-        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
 
         var assetType = new AssetTypeDefinition
         {
@@ -124,38 +86,14 @@ public class AssetTypesController : TenantControllerBase
         _db.AssetTypeDefinitions.Add(assetType);
         await _db.SaveChangesAsync();
 
-        return Ok(new AssetTypeResponse
-        {
-            Id = assetType.Id,
-            Name = assetType.Name,
-            Description = assetType.Description,
-            IconName = assetType.IconName,
-            IsActive = assetType.IsActive,
-            Fields = assetType.Fields
-                .OrderBy(f => f.DisplayOrder)
-                .Select(f => new AssetTypeFieldResponse
-                {
-                    Id = f.Id,
-                    Name = f.Name,
-                    DataType = f.DataType,
-                    IsRequired = f.IsRequired,
-                    IsCveSearchable = f.IsCveSearchable,
-                    DisplayOrder = f.DisplayOrder,
-                    DefaultValue = f.DefaultValue
-                })
-                .ToList()
-        });
+        return Ok(assetType.ToResponse());
     }
 
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAssetTypeRequest request)
     {
-        var orgId = await GetCurrentOrgIdAsync();
-        if (!orgId.HasValue) return Forbid();
-
-        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
 
         var assetType = await _db.AssetTypeDefinitions
             .Include(at => at.Fields)
@@ -188,50 +126,22 @@ public class AssetTypesController : TenantControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
-
-        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
 
         var assetType = await _db.AssetTypeDefinitions
             .FirstOrDefaultAsync(at => at.Id == id && at.IsActive);
 
         if (assetType == null) return NotFound();
 
-        // Find or create a fallback "Unknown" type so assets don't break
-        var unknownType = await _db.AssetTypeDefinitions
-            .FirstOrDefaultAsync(at => at.Name == "Unknown" && at.OrganizationId == orgId.Value && at.IsActive);
-
-        if (unknownType == null)
-        {
-            unknownType = new AssetTypeDefinition
-            {
-                Id = Guid.NewGuid(),
-                Name = "Unknown",
-                Description = "Fallback type for assets whose original type was deleted.",
-                OrganizationId = orgId.Value,
-                IsActive = true,
-                Fields = []
-            };
-            _db.AssetTypeDefinitions.Add(unknownType);
-            await _db.SaveChangesAsync();
-        }
-
-        // Reassign all assets using this type to Unknown
-        var affectedAssets = await _db.Assets
-            .Where(a => a.AssetTypeId == id)
-            .ToListAsync();
-
-        foreach (var asset in affectedAssets)
-        {
-            asset.AssetTypeId = unknownType.Id;
-        }
+        var reassignedCount = await _templateService.ReassignAssetsToUnknownTypeAsync(orgId.Value, id);
 
         assetType.IsActive = false;
         await _db.SaveChangesAsync();
 
-        return Ok(new { message = $"Asset type deleted. {affectedAssets.Count} asset(s) reassigned to 'Unknown'." });
+        return Ok(new { message = $"Asset type deleted. {reassignedCount} asset(s) reassigned to 'Unknown'." });
     }
 }

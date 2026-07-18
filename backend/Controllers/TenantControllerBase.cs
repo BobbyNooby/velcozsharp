@@ -1,5 +1,6 @@
 using backend.Data;
 using backend.Models.Entities;
+using backend.Models.Enums;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -54,5 +55,21 @@ public abstract class TenantControllerBase : ControllerBase
             .Where(uo => uo.UserId == user.Id && uo.OrganizationId == orgId)
             .Select(uo => uo.Role)
             .FirstOrDefaultAsync();
+    }
+
+    /// <summary>
+    /// Ensures the current user is an admin of the current organization.
+    /// Returns a Forbid result if not authorized, or null if authorized.
+    /// </summary>
+    protected async Task<IActionResult?> RequireOrgAdminAsync()
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var role = await GetUserOrgRoleAsync(orgId.Value);
+        if (role != RoleNames.Admin)
+            return Forbid();
+
+        return null;
     }
 }

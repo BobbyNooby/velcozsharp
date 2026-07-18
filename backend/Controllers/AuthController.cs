@@ -1,4 +1,5 @@
 using backend.Data;
+using backend.Models.Dtos;
 using backend.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -86,8 +87,3 @@ public class AuthController : ControllerBase
     }
 }
 
-public class LoginRequest
-{
-    public string Email { get; set; } = "";
-    public string Password { get; set; } = "";
-}

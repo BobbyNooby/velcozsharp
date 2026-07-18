@@ -1,4 +1,5 @@
 using backend.Data;
+using backend.Infrastructure.Pagination;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Services;
@@ -8,30 +9,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend.Controllers;
-
-public class BulkUpdateVulnerabilityStatusRequest
-{
-    public List<Guid> VulnerabilityIds { get; set; } = [];
-    public string Status { get; set; } = "";
-}
-
-public class VulnerabilityListItemResponse
-{
-    public Guid AssetId { get; set; }
-    public string AssetName { get; set; } = "";
-    public string AssetTypeName { get; set; } = "";
-
-    public Guid VulnerabilityId { get; set; }
-    public string CveId { get; set; } = "";
-    public string? Description { get; set; }
-    public double? CvssScore { get; set; }
-    public string? Severity { get; set; }
-    public DateTime? PublishedDate { get; set; }
-
-    public DateTime DetectedAt { get; set; }
-    public string Status { get; set; } = "Active";
-    public string? MatchedKeyword { get; set; }
-}
 
 [ApiController]
 [Route("api/vulnerabilities")]
@@ -96,11 +73,7 @@ public class VulnerabilitiesController : TenantControllerBase
             _ => descending ? query.OrderByDescending(av => av.Vulnerability.CvssScore) : query.OrderBy(av => av.Vulnerability.CvssScore)
         };
 
-        var totalCount = await query.CountAsync();
-
-        var items = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        var result = await query
             .Select(av => new VulnerabilityListItemResponse
             {
                 AssetId = av.AssetId,
@@ -116,15 +89,7 @@ public class VulnerabilitiesController : TenantControllerBase
                 Status = av.Status,
                 MatchedKeyword = av.MatchedKeyword
             })
-            .ToListAsync();
-
-        var result = new PagedResult<VulnerabilityListItemResponse>
-        {
-            Items = items,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize
-        };
+            .ToPagedResultAsync(page, pageSize);
 
         return Ok(result);
     }
@@ -151,8 +116,8 @@ public class VulnerabilitiesController : TenantControllerBase
             .ExecuteUpdateAsync(setters => setters.SetProperty(av => av.Status, request.Status));
 
         await _audit.LogAsync("VulnerabilityBulkStatusChanged", "Vulnerability", string.Join(",", cveIds.Take(5)),
-            $"{{\"count\":{ids.Count},\"oldStatus\":\"various\"}}",
-            $"{{\"count\":{ids.Count},\"newStatus\":\"{request.Status}\"}}");
+            new { Count = ids.Count, OldStatus = "various" },
+            new { Count = ids.Count, NewStatus = request.Status });
 
         return NoContent();
     }

@@ -1,11 +1,14 @@
 using backend.Data;
 using backend.Models.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services;
 
 public interface IAssetTypeTemplateService
 {
     Task SeedBuiltInTypesAsync(Guid organizationId);
+    Task<AssetTypeDefinition> GetOrCreateUnknownTypeAsync(Guid organizationId);
+    Task<int> ReassignAssetsToUnknownTypeAsync(Guid organizationId, Guid? sourceTypeId = null);
 }
 
 public class AssetTypeTemplateService : IAssetTypeTemplateService
@@ -52,6 +55,50 @@ public class AssetTypeTemplateService : IAssetTypeTemplateService
         }
 
         await _db.SaveChangesAsync();
+    }
+
+    public async Task<AssetTypeDefinition> GetOrCreateUnknownTypeAsync(Guid organizationId)
+    {
+        var unknownType = await _db.AssetTypeDefinitions
+            .FirstOrDefaultAsync(at => at.Name == "Unknown" && at.OrganizationId == organizationId && at.IsActive);
+
+        if (unknownType == null)
+        {
+            unknownType = new AssetTypeDefinition
+            {
+                Id = Guid.NewGuid(),
+                Name = "Unknown",
+                Description = "Fallback type for assets whose original type was deleted.",
+                OrganizationId = organizationId,
+                IsActive = true,
+                Fields = []
+            };
+            _db.AssetTypeDefinitions.Add(unknownType);
+            await _db.SaveChangesAsync();
+        }
+
+        return unknownType;
+    }
+
+    public async Task<int> ReassignAssetsToUnknownTypeAsync(Guid organizationId, Guid? sourceTypeId = null)
+    {
+        _db.CurrentOrganizationId = organizationId;
+
+        var unknownType = await GetOrCreateUnknownTypeAsync(organizationId);
+
+        var query = _db.Assets.AsQueryable();
+        if (sourceTypeId.HasValue)
+            query = query.Where(a => a.AssetTypeId == sourceTypeId.Value);
+
+        var affectedAssets = await query.ToListAsync();
+
+        foreach (var asset in affectedAssets)
+        {
+            asset.AssetTypeId = unknownType.Id;
+        }
+
+        await _db.SaveChangesAsync();
+        return affectedAssets.Count;
     }
 
     private static List<AssetTypeTemplate> GetBuiltInTemplates()

@@ -66,7 +66,6 @@ public static class DevSeeder
                 UserName = fake.Email,
                 Email = fake.Email,
                 DisplayName = fake.Name,
-                OrganizationId = orgs[0].Id, // Legacy: default to first org
                 EmailConfirmed = true
             };
 

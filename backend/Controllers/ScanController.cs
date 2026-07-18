@@ -1,4 +1,6 @@
 using backend.Data;
+using backend.Infrastructure.Pagination;
+using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
 using backend.Services;
@@ -8,31 +10,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend.Controllers;
-
-public class BulkScanRequest
-{
-    public List<Guid> AssetIds { get; set; } = [];
-}
-
-public class ScanJobResponse
-{
-    public Guid Id { get; set; }
-    public string Type { get; set; } = "";
-    public string Status { get; set; } = "";
-    public int TotalAssets { get; set; }
-    public int ProcessedAssets { get; set; }
-    public int NewVulnerabilitiesFound { get; set; }
-    public string? CurrentAssetName { get; set; }
-    public string? ErrorMessage { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime? StartedAt { get; set; }
-    public DateTime? CompletedAt { get; set; }
-    public TimeSpan? Duration => CompletedAt.HasValue && StartedAt.HasValue
-        ? CompletedAt.Value - StartedAt.Value
-        : StartedAt.HasValue
-            ? DateTime.UtcNow - StartedAt.Value
-            : null;
-}
 
 [ApiController]
 [Route("api/scan")]
@@ -162,15 +139,9 @@ public class ScanController : TenantControllerBase
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var query = _db.ScanJobs
+        var result = await _db.ScanJobs
             .Where(j => j.OrganizationId == orgId.Value)
-            .OrderByDescending(j => j.CreatedAt);
-
-        var total = await query.CountAsync();
-
-        var jobs = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+            .OrderByDescending(j => j.CreatedAt)
             .Select(j => new ScanJobResponse
             {
                 Id = j.Id,
@@ -185,9 +156,9 @@ public class ScanController : TenantControllerBase
                 StartedAt = j.StartedAt,
                 CompletedAt = j.CompletedAt
             })
-            .ToListAsync();
+            .ToPagedResultAsync(page, pageSize);
 
-        return Ok(new { items = jobs, totalCount = total, page, pageSize });
+        return Ok(result);
     }
 
     [HttpGet("jobs/{id:guid}")]
