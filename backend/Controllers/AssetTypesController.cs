@@ -1,4 +1,5 @@
 using backend.Data;
+using backend.Infrastructure.Mapping;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
@@ -33,30 +34,9 @@ public class AssetTypesController : TenantControllerBase
             .Include(at => at.Fields)
             .Where(at => at.IsActive)
             .OrderBy(at => at.Name)
-            .Select(at => new AssetTypeResponse
-            {
-                Id = at.Id,
-                Name = at.Name,
-                Description = at.Description,
-                IconName = at.IconName,
-                IsActive = at.IsActive,
-                Fields = at.Fields
-                    .OrderBy(f => f.DisplayOrder)
-                    .Select(f => new AssetTypeFieldResponse
-                    {
-                        Id = f.Id,
-                        Name = f.Name,
-                        DataType = f.DataType,
-                        IsRequired = f.IsRequired,
-                        IsCveSearchable = f.IsCveSearchable,
-                        DisplayOrder = f.DisplayOrder,
-                        DefaultValue = f.DefaultValue
-                    })
-                    .ToList()
-            })
             .ToListAsync();
 
-        return Ok(types);
+        return Ok(types.Select(at => at.ToResponse()).ToList());
     }
 
     [HttpGet("{id:guid}")]
@@ -68,31 +48,10 @@ public class AssetTypesController : TenantControllerBase
         var type = await _db.AssetTypeDefinitions
             .Include(at => at.Fields)
             .Where(at => at.Id == id && at.IsActive)
-            .Select(at => new AssetTypeResponse
-            {
-                Id = at.Id,
-                Name = at.Name,
-                Description = at.Description,
-                IconName = at.IconName,
-                IsActive = at.IsActive,
-                Fields = at.Fields
-                    .OrderBy(f => f.DisplayOrder)
-                    .Select(f => new AssetTypeFieldResponse
-                    {
-                        Id = f.Id,
-                        Name = f.Name,
-                        DataType = f.DataType,
-                        IsRequired = f.IsRequired,
-                        IsCveSearchable = f.IsCveSearchable,
-                        DisplayOrder = f.DisplayOrder,
-                        DefaultValue = f.DefaultValue
-                    })
-                    .ToList()
-            })
             .FirstOrDefaultAsync();
 
         if (type == null) return NotFound();
-        return Ok(type);
+        return Ok(type.ToResponse());
     }
 
     [HttpPost]
@@ -127,27 +86,7 @@ public class AssetTypesController : TenantControllerBase
         _db.AssetTypeDefinitions.Add(assetType);
         await _db.SaveChangesAsync();
 
-        return Ok(new AssetTypeResponse
-        {
-            Id = assetType.Id,
-            Name = assetType.Name,
-            Description = assetType.Description,
-            IconName = assetType.IconName,
-            IsActive = assetType.IsActive,
-            Fields = assetType.Fields
-                .OrderBy(f => f.DisplayOrder)
-                .Select(f => new AssetTypeFieldResponse
-                {
-                    Id = f.Id,
-                    Name = f.Name,
-                    DataType = f.DataType,
-                    IsRequired = f.IsRequired,
-                    IsCveSearchable = f.IsCveSearchable,
-                    DisplayOrder = f.DisplayOrder,
-                    DefaultValue = f.DefaultValue
-                })
-                .ToList()
-        });
+        return Ok(assetType.ToResponse());
     }
 
     [HttpPut("{id:guid}")]
