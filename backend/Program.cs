@@ -31,6 +31,7 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.Cookie.HttpOnly = true;
     options.Cookie.SecurePolicy = CookieSecurePolicy.None; // dev only
     options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.Domain = "localhost"; // domain cookie: shared across ports
     options.ExpireTimeSpan = TimeSpan.FromHours(24);
     options.SlidingExpiration = true;
 
@@ -54,7 +55,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("DevCors", policy =>
     {
-        policy.WithOrigins("http://localhost:3000")
+        policy.WithOrigins(
+                  "http://localhost:3000",
+                  "http://127.0.0.1:3000"
+              )
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();

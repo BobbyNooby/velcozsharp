@@ -82,10 +82,17 @@ export function useAuthSession() {
     let cancelled = false;
 
     fetch(`${API_BASE}/auth/me`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => {
+        if (!res.ok) {
+          console.warn(`[Auth] /auth/me returned ${res.status} ${res.statusText}`);
+          return null;
+        }
+        return res.json();
+      })
       .then((data) => {
         if (cancelled) return;
         if (data) {
+          console.log("[Auth] Session loaded:", data.email, data.role);
           setUser(data);
           if (data.organizations?.length > 0) {
             const mapped = data.organizations.map((o: any) => ({
@@ -100,9 +107,13 @@ export function useAuthSession() {
               if (def) setOrgId(def.id);
             }
           }
+        } else {
+          console.log("[Auth] No active session");
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error("[Auth] /auth/me fetch failed:", err);
+      })
       .finally(() => {
         if (!cancelled) {
           setLoading(false);
