@@ -124,10 +124,8 @@ public class OrganizationsController : TenantControllerBase
         var orgId = await GetCurrentOrgIdAsync();
         if (orgId != id) return NotFound();
 
-        // Check org-level Admin role
-        var orgRole = await GetUserOrgRoleAsync(id);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
 
         var org = await _db.Organizations.FirstOrDefaultAsync(o => o.Id == id);
         if (org == null) return NotFound();
@@ -146,10 +144,8 @@ public class OrganizationsController : TenantControllerBase
         var orgId = await GetCurrentOrgIdAsync();
         if (orgId != id) return NotFound();
 
-        // Check org-level Admin role
-        var orgRole = await GetUserOrgRoleAsync(id);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
 
         var org = await _db.Organizations.FirstOrDefaultAsync(o => o.Id == id);
         if (org == null) return NotFound();

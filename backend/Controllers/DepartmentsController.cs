@@ -60,12 +60,11 @@ public class DepartmentsController : TenantControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateDepartmentRequest request)
     {
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
-
-        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
 
         var department = new Department
         {
@@ -89,12 +88,8 @@ public class DepartmentsController : TenantControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateDepartmentRequest request)
     {
-        var orgId = await GetCurrentOrgIdAsync();
-        if (!orgId.HasValue) return Forbid();
-
-        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
 
         var department = await _db.Departments.FirstOrDefaultAsync(d => d.Id == id);
         if (department == null) return NotFound();
@@ -108,12 +103,8 @@ public class DepartmentsController : TenantControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var orgId = await GetCurrentOrgIdAsync();
-        if (!orgId.HasValue) return Forbid();
-
-        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
 
         var department = await _db.Departments.FirstOrDefaultAsync(d => d.Id == id);
         if (department == null) return NotFound();

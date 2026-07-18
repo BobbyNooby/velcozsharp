@@ -31,12 +31,11 @@ public class SeedController : TenantControllerBase
     [HttpPost("demo-assets")]
     public async Task<IActionResult> SeedDemoAssets()
     {
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
-
-        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
-        if (orgRole != "Admin")
-            return Forbid();
 
         _db.CurrentOrganizationId = orgId.Value;
 

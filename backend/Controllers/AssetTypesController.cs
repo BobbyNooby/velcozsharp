@@ -94,12 +94,11 @@ public class AssetTypesController : TenantControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateAssetTypeRequest request)
     {
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
-
-        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
 
         var assetType = new AssetTypeDefinition
         {
@@ -150,12 +149,8 @@ public class AssetTypesController : TenantControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAssetTypeRequest request)
     {
-        var orgId = await GetCurrentOrgIdAsync();
-        if (!orgId.HasValue) return Forbid();
-
-        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
 
         var assetType = await _db.AssetTypeDefinitions
             .Include(at => at.Fields)
@@ -188,12 +183,11 @@ public class AssetTypesController : TenantControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
-
-        var orgRole = await GetUserOrgRoleAsync(orgId.Value);
-        if (orgRole != RoleNames.Admin)
-            return Forbid();
 
         var assetType = await _db.AssetTypeDefinitions
             .FirstOrDefaultAsync(at => at.Id == id && at.IsActive);
