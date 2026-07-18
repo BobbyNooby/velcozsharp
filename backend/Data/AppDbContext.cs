@@ -8,7 +8,7 @@ namespace backend.Data;
 
 public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
 {
-    private readonly ITenantContext _tenantContext;
+    private readonly ITenantContext? _tenantContext;
 
     public Guid CurrentOrganizationId { get; set; }
 
@@ -26,8 +26,8 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext? tenantContext = null)
         : base(options)
     {
-        _tenantContext = tenantContext ?? new NullTenantContext();
-        CurrentOrganizationId = _tenantContext.OrganizationId;
+        _tenantContext = tenantContext;
+        CurrentOrganizationId = tenantContext?.OrganizationId ?? Guid.Empty;
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -61,14 +61,6 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
 
         modelBuilder.Entity<AuditLog>()
             .HasQueryFilter(al => al.OrganizationId == CurrentOrganizationId);
-
-        // AppUser -> Organization (legacy single-org, nullable for migration)
-        modelBuilder.Entity<AppUser>()
-            .HasOne(u => u.Organization)
-            .WithMany(o => o.Users)
-            .HasForeignKey(u => u.OrganizationId)
-            .OnDelete(DeleteBehavior.Restrict)
-            .IsRequired(false);
 
         // UserOrganization join table
         modelBuilder.Entity<UserOrganization>()
