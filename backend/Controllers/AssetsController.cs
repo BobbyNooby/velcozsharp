@@ -1,4 +1,5 @@
 using backend.Data;
+using backend.Infrastructure.Pagination;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
@@ -86,11 +87,7 @@ public class AssetsController : TenantControllerBase
             _ => descending ? query.OrderByDescending(a => a.CreatedAt) : query.OrderBy(a => a.CreatedAt)
         };
 
-        var totalCount = await query.CountAsync();
-
-        var items = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        var result = await query
             .Select(a => new AssetResponse
             {
                 Id = a.Id,
@@ -109,15 +106,7 @@ public class AssetsController : TenantControllerBase
                 CreatedAt = a.CreatedAt,
                 UpdatedAt = a.UpdatedAt
             })
-            .ToListAsync();
-
-        var result = new PagedResult<AssetResponse>
-        {
-            Items = items,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize
-        };
+            .ToPagedResultAsync(page, pageSize);
 
         return Ok(result);
     }

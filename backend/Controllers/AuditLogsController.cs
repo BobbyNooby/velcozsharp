@@ -1,4 +1,5 @@
 using backend.Data;
+using backend.Infrastructure.Pagination;
 using backend.Models.Entities;
 using backend.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -58,11 +59,7 @@ public class AuditLogsController : TenantControllerBase
         if (!string.IsNullOrWhiteSpace(entityId))
             query = query.Where(l => l.EntityId == entityId);
 
-        var total = await query.CountAsync();
-
-        var items = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        var result = await query
             .Select(l => new AuditLogResponse
             {
                 Id = l.Id,
@@ -74,8 +71,8 @@ public class AuditLogsController : TenantControllerBase
                 ChangedByUserId = l.ChangedByUserId,
                 Timestamp = l.Timestamp
             })
-            .ToListAsync();
+            .ToPagedResultAsync(page, pageSize);
 
-        return Ok(new { items, totalCount = total, page, pageSize });
+        return Ok(result);
     }
 }

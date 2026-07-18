@@ -1,4 +1,5 @@
 using backend.Data;
+using backend.Infrastructure.Pagination;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Services;
@@ -96,11 +97,7 @@ public class VulnerabilitiesController : TenantControllerBase
             _ => descending ? query.OrderByDescending(av => av.Vulnerability.CvssScore) : query.OrderBy(av => av.Vulnerability.CvssScore)
         };
 
-        var totalCount = await query.CountAsync();
-
-        var items = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        var result = await query
             .Select(av => new VulnerabilityListItemResponse
             {
                 AssetId = av.AssetId,
@@ -116,15 +113,7 @@ public class VulnerabilitiesController : TenantControllerBase
                 Status = av.Status,
                 MatchedKeyword = av.MatchedKeyword
             })
-            .ToListAsync();
-
-        var result = new PagedResult<VulnerabilityListItemResponse>
-        {
-            Items = items,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize
-        };
+            .ToPagedResultAsync(page, pageSize);
 
         return Ok(result);
     }

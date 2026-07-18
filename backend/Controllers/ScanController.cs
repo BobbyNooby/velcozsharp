@@ -1,4 +1,6 @@
 using backend.Data;
+using backend.Infrastructure.Pagination;
+using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
 using backend.Services;
@@ -162,15 +164,9 @@ public class ScanController : TenantControllerBase
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var query = _db.ScanJobs
+        var result = await _db.ScanJobs
             .Where(j => j.OrganizationId == orgId.Value)
-            .OrderByDescending(j => j.CreatedAt);
-
-        var total = await query.CountAsync();
-
-        var jobs = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+            .OrderByDescending(j => j.CreatedAt)
             .Select(j => new ScanJobResponse
             {
                 Id = j.Id,
@@ -185,9 +181,9 @@ public class ScanController : TenantControllerBase
                 StartedAt = j.StartedAt,
                 CompletedAt = j.CompletedAt
             })
-            .ToListAsync();
+            .ToPagedResultAsync(page, pageSize);
 
-        return Ok(new { items = jobs, totalCount = total, page, pageSize });
+        return Ok(result);
     }
 
     [HttpGet("jobs/{id:guid}")]
