@@ -1,17 +1,24 @@
 using backend.Data;
 using backend.Models.Entities;
+using System.Text.Json;
 
 namespace backend.Services;
 
 public interface IAuditLogService
 {
     Task LogAsync(string action, string entityType, string entityId, string? beforeJson = null, string? afterJson = null);
+    Task LogAsync(string action, string entityType, string entityId, object? before = null, object? after = null);
 }
 
 public class AuditLogService : IAuditLogService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IHttpContextAccessor _httpContextAccessor;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
 
     public AuditLogService(IServiceProvider serviceProvider, IHttpContextAccessor httpContextAccessor)
     {
@@ -60,5 +67,12 @@ public class AuditLogService : IAuditLogService
         });
 
         await db.SaveChangesAsync();
+    }
+
+    public async Task LogAsync(string action, string entityType, string entityId, object? before = null, object? after = null)
+    {
+        var beforeJson = before != null ? JsonSerializer.Serialize(before, JsonOptions) : null;
+        var afterJson = after != null ? JsonSerializer.Serialize(after, JsonOptions) : null;
+        await LogAsync(action, entityType, entityId, beforeJson, afterJson);
     }
 }

@@ -178,8 +178,8 @@ public class AssetsController : TenantControllerBase
         await _db.SaveChangesAsync();
 
         await _audit.LogAsync("VulnerabilityStatusChanged", "Vulnerability", cveId,
-            $"{{\"assetId\":\"{assetId}\",\"status\":\"{beforeStatus}\"}}",
-            $"{{\"assetId\":\"{assetId}\",\"status\":\"{request.Status}\"}}");
+            new { AssetId = assetId, Status = beforeStatus },
+            new { AssetId = assetId, Status = request.Status });
 
         return NoContent();
     }
@@ -217,9 +217,10 @@ public class AssetsController : TenantControllerBase
         _db.Assets.Add(asset);
         await _db.SaveChangesAsync();
 
+        var assetTypeName = (await _db.AssetTypeDefinitions.FindAsync(asset.AssetTypeId))?.Name;
         await _audit.LogAsync("AssetCreated", "Asset", asset.Id.ToString(),
             null,
-            $"{{\"name\":\"{asset.Name}\",\"type\":\"{(await _db.AssetTypeDefinitions.FindAsync(asset.AssetTypeId))?.Name}\"}}");
+            new { asset.Name, Type = assetTypeName });
 
         return Ok(new AssetResponse
         {
@@ -258,7 +259,7 @@ public class AssetsController : TenantControllerBase
         if (!valid)
             return BadRequest(new { message = error });
 
-        var before = $"{{\"name\":\"{asset.Name}\",\"status\":\"{asset.Status}\",\"deptId\":\"{asset.DepartmentId}\"}}";
+        var before = new { asset.Name, asset.Status, DeptId = asset.DepartmentId };
 
         asset.Name = request.Name;
         asset.Description = request.Description;
@@ -269,7 +270,7 @@ public class AssetsController : TenantControllerBase
 
         await _db.SaveChangesAsync();
 
-        var after = $"{{\"name\":\"{asset.Name}\",\"status\":\"{asset.Status}\",\"deptId\":\"{asset.DepartmentId}\"}}";
+        var after = new { asset.Name, asset.Status, DeptId = asset.DepartmentId };
         await _audit.LogAsync("AssetUpdated", "Asset", asset.Id.ToString(), before, after);
 
         return NoContent();
@@ -286,13 +287,13 @@ public class AssetsController : TenantControllerBase
 
         if (asset == null) return NotFound();
 
-        var before = $"{{\"name\":\"{asset.Name}\",\"status\":\"{asset.Status}\"}}";
+        var before = new { asset.Name, asset.Status };
 
         asset.Status = AssetStatus.Decommissioned;
         asset.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        await _audit.LogAsync("AssetDeleted", "Asset", asset.Id.ToString(), before, "{\"status\":\"Decommissioned\"}");
+        await _audit.LogAsync("AssetDeleted", "Asset", asset.Id.ToString(), before, new { Status = "Decommissioned" });
 
         return NoContent();
     }

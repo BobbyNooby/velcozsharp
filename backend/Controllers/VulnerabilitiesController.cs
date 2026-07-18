@@ -116,8 +116,8 @@ public class VulnerabilitiesController : TenantControllerBase
             .ExecuteUpdateAsync(setters => setters.SetProperty(av => av.Status, request.Status));
 
         await _audit.LogAsync("VulnerabilityBulkStatusChanged", "Vulnerability", string.Join(",", cveIds.Take(5)),
-            $"{{\"count\":{ids.Count},\"oldStatus\":\"various\"}}",
-            $"{{\"count\":{ids.Count},\"newStatus\":\"{request.Status}\"}}");
+            new { Count = ids.Count, OldStatus = "various" },
+            new { Count = ids.Count, NewStatus = request.Status });
 
         return NoContent();
     }
