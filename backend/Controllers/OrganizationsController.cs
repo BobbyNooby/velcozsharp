@@ -150,37 +150,11 @@ public class OrganizationsController : TenantControllerBase
         var org = await _db.Organizations.FirstOrDefaultAsync(o => o.Id == id);
         if (org == null) return NotFound();
 
-        // Reassign assets to Unknown type
-        var unknownType = await _db.AssetTypeDefinitions
-            .FirstOrDefaultAsync(at => at.Name == "Unknown" && at.OrganizationId == id && at.IsActive);
-
-        if (unknownType == null)
-        {
-            unknownType = new AssetTypeDefinition
-            {
-                Id = Guid.NewGuid(),
-                Name = "Unknown",
-                Description = "Fallback type for assets whose original type was deleted.",
-                OrganizationId = id,
-                IsActive = true,
-                Fields = []
-            };
-            _db.AssetTypeDefinitions.Add(unknownType);
-            await _db.SaveChangesAsync();
-        }
-
-        var affectedAssets = await _db.Assets
-            .Where(a => a.OrganizationId == id)
-            .ToListAsync();
-
-        foreach (var asset in affectedAssets)
-        {
-            asset.AssetTypeId = unknownType.Id;
-        }
+        var reassignedCount = await _templateService.ReassignAssetsToUnknownTypeAsync(id);
 
         org.IsActive = false;
         await _db.SaveChangesAsync();
 
-        return Ok(new { message = $"Organization deleted. {affectedAssets.Count} asset(s) reassigned to 'Unknown'." });
+        return Ok(new { message = $"Organization deleted. {reassignedCount} asset(s) reassigned to 'Unknown'." });
     }
 }

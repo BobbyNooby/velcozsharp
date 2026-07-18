@@ -2,6 +2,7 @@ using backend.Data;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
+using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -14,9 +15,12 @@ namespace backend.Controllers;
 [Authorize]
 public class AssetTypesController : TenantControllerBase
 {
-    public AssetTypesController(AppDbContext db, UserManager<AppUser> userManager)
+    private readonly IAssetTypeTemplateService _templateService;
+
+    public AssetTypesController(AppDbContext db, UserManager<AppUser> userManager, IAssetTypeTemplateService templateService)
         : base(db, userManager)
     {
+        _templateService = templateService;
     }
 
     [HttpGet]
@@ -194,38 +198,11 @@ public class AssetTypesController : TenantControllerBase
 
         if (assetType == null) return NotFound();
 
-        // Find or create a fallback "Unknown" type so assets don't break
-        var unknownType = await _db.AssetTypeDefinitions
-            .FirstOrDefaultAsync(at => at.Name == "Unknown" && at.OrganizationId == orgId.Value && at.IsActive);
-
-        if (unknownType == null)
-        {
-            unknownType = new AssetTypeDefinition
-            {
-                Id = Guid.NewGuid(),
-                Name = "Unknown",
-                Description = "Fallback type for assets whose original type was deleted.",
-                OrganizationId = orgId.Value,
-                IsActive = true,
-                Fields = []
-            };
-            _db.AssetTypeDefinitions.Add(unknownType);
-            await _db.SaveChangesAsync();
-        }
-
-        // Reassign all assets using this type to Unknown
-        var affectedAssets = await _db.Assets
-            .Where(a => a.AssetTypeId == id)
-            .ToListAsync();
-
-        foreach (var asset in affectedAssets)
-        {
-            asset.AssetTypeId = unknownType.Id;
-        }
+        var reassignedCount = await _templateService.ReassignAssetsToUnknownTypeAsync(orgId.Value, id);
 
         assetType.IsActive = false;
         await _db.SaveChangesAsync();
 
-        return Ok(new { message = $"Asset type deleted. {affectedAssets.Count} asset(s) reassigned to 'Unknown'." });
+        return Ok(new { message = $"Asset type deleted. {reassignedCount} asset(s) reassigned to 'Unknown'." });
     }
 }
