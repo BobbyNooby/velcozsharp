@@ -32,6 +32,8 @@ public class AssetsController : TenantControllerBase
         [FromQuery] Guid? assetTypeId,
         [FromQuery] AssetStatus? status,
         [FromQuery] string? severity,
+        [FromQuery] string? criticality,
+        [FromQuery] string? tag,
         [FromQuery] string? search,
         [FromQuery] bool? hasVulnerabilities,
         [FromQuery] string? sortBy,
@@ -63,6 +65,15 @@ public class AssetsController : TenantControllerBase
         if (!string.IsNullOrWhiteSpace(severity))
             query = query.Where(a => a.HighestSeverity == severity);
 
+        if (!string.IsNullOrWhiteSpace(criticality) && Enum.TryParse<AssetCriticality>(criticality, true, out var crit))
+            query = query.Where(a => a.Criticality == crit);
+
+        if (!string.IsNullOrWhiteSpace(tag))
+        {
+            var tagName = tag.Trim().ToLower();
+            query = query.Where(a => a.Tags != null && a.Tags.Any(t => t == tagName));
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
@@ -83,6 +94,7 @@ public class AssetsController : TenantControllerBase
             "name" => descending ? query.OrderByDescending(a => a.Name) : query.OrderBy(a => a.Name),
             "cvss" => descending ? query.OrderByDescending(a => a.HighestCvssScore) : query.OrderBy(a => a.HighestCvssScore),
             "vulncount" => descending ? query.OrderByDescending(a => a.Vulnerabilities.Count) : query.OrderBy(a => a.Vulnerabilities.Count),
+            "criticality" => descending ? query.OrderByDescending(a => a.Criticality) : query.OrderBy(a => a.Criticality),
             "lastscanned" => descending ? query.OrderByDescending(a => a.LastScannedAt) : query.OrderBy(a => a.LastScannedAt),
             _ => descending ? query.OrderByDescending(a => a.CreatedAt) : query.OrderBy(a => a.CreatedAt)
         };
@@ -98,6 +110,9 @@ public class AssetsController : TenantControllerBase
                 DepartmentId = a.DepartmentId,
                 DepartmentName = a.Department.Name,
                 Status = a.Status,
+                Criticality = a.Criticality,
+                IsCriticalityAuto = a.IsCriticalityAuto,
+                Tags = a.Tags ?? new List<string>(),
                 Properties = a.Properties,
                 HighestCvssScore = a.HighestCvssScore,
                 HighestSeverity = a.HighestSeverity,
@@ -133,6 +148,9 @@ public class AssetsController : TenantControllerBase
                 DepartmentId = a.DepartmentId,
                 DepartmentName = a.Department.Name,
                 Status = a.Status,
+                Criticality = a.Criticality,
+                IsCriticalityAuto = a.IsCriticalityAuto,
+                Tags = a.Tags ?? new List<string>(),
                 Properties = a.Properties,
                 HighestCvssScore = a.HighestCvssScore,
                 HighestSeverity = a.HighestSeverity,
@@ -215,6 +233,9 @@ public class AssetsController : TenantControllerBase
             AssetTypeId = request.AssetTypeId,
             DepartmentId = request.DepartmentId,
             Status = AssetStatus.Active,
+            Criticality = AssetCriticality.Medium,
+            IsCriticalityAuto = true,
+            Tags = NormalizeTags(request.Tags),
             Properties = request.Properties,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -238,6 +259,9 @@ public class AssetsController : TenantControllerBase
             DepartmentId = asset.DepartmentId,
             DepartmentName = (await _db.Departments.FindAsync(asset.DepartmentId))?.Name ?? "",
             Status = asset.Status,
+            Criticality = asset.Criticality,
+            IsCriticalityAuto = asset.IsCriticalityAuto,
+            Tags = asset.Tags ?? new List<string>(),
             Properties = asset.Properties,
             CreatedAt = asset.CreatedAt,
             UpdatedAt = asset.UpdatedAt
@@ -268,18 +292,26 @@ public class AssetsController : TenantControllerBase
         if (!valid)
             return BadRequest(new { message = error });
 
-        var before = new { asset.Name, asset.Status, DeptId = asset.DepartmentId };
+        var before = new { asset.Name, asset.Status, asset.Criticality, DeptId = asset.DepartmentId };
 
         asset.Name = request.Name;
         asset.Description = request.Description;
         asset.DepartmentId = request.DepartmentId;
         asset.Status = request.Status;
+        asset.Tags = NormalizeTags(request.Tags);
+
+        if (asset.Criticality != request.Criticality)
+        {
+            asset.Criticality = request.Criticality;
+            asset.IsCriticalityAuto = false;
+        }
+
         asset.Properties = request.Properties;
         asset.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
 
-        var after = new { asset.Name, asset.Status, DeptId = asset.DepartmentId };
+        var after = new { asset.Name, asset.Status, asset.Criticality, DeptId = asset.DepartmentId };
         await _audit.LogAsync("AssetUpdated", "Asset", asset.Id.ToString(), before, after);
 
         return NoContent();
@@ -308,5 +340,14 @@ public class AssetsController : TenantControllerBase
         await _audit.LogAsync("AssetDeleted", "Asset", asset.Id.ToString(), before, new { Status = "Decommissioned" });
 
         return NoContent();
+    }
+
+    private static List<string> NormalizeTags(List<string>? tagNames)
+    {
+        return (tagNames ?? new List<string>())
+            .Select(t => t.Trim().ToLower())
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct()
+            .ToList();
     }
 }

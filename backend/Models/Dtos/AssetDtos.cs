@@ -8,6 +8,8 @@ public class CreateAssetRequest
     public string? Description { get; set; }
     public Guid AssetTypeId { get; set; }
     public Guid DepartmentId { get; set; }
+    public AssetCriticality Criticality { get; set; } = AssetCriticality.Medium;
+    public List<string> Tags { get; set; } = [];
     public Dictionary<string, object> Properties { get; set; } = new();
 }
 
@@ -17,6 +19,9 @@ public class UpdateAssetRequest
     public string? Description { get; set; }
     public Guid DepartmentId { get; set; }
     public AssetStatus Status { get; set; }
+    public AssetCriticality Criticality { get; set; } = AssetCriticality.Medium;
+    public bool IsCriticalityAuto { get; set; } = true;
+    public List<string> Tags { get; set; } = [];
     public Dictionary<string, object> Properties { get; set; } = new();
 }
 
@@ -33,6 +38,9 @@ public class AssetResponse
     public string DepartmentName { get; set; } = "";
 
     public AssetStatus Status { get; set; }
+    public AssetCriticality Criticality { get; set; }
+    public bool IsCriticalityAuto { get; set; }
+    public List<string> Tags { get; set; } = [];
     public Dictionary<string, object> Properties { get; set; } = new();
 
     public double? HighestCvssScore { get; set; }

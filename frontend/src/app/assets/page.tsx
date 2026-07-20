@@ -31,11 +31,16 @@ type Asset = {
   assetTypeName: string;
   departmentName: string;
   status: string;
+  criticality: string;
+  isCriticalityAuto: boolean;
+  tags: string[];
   highestCvssScore?: number;
   highestSeverity?: string;
   lastScannedAt?: string;
   vulnerabilityCount: number;
 };
+
+type TagOption = { id: string; name: string };
 
 type Option = { id: string; name: string };
 
@@ -44,6 +49,13 @@ const severityColors: Record<string, string> = {
   HIGH: "bg-orange-100 text-orange-700 hover:bg-orange-100",
   MEDIUM: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100",
   LOW: "bg-blue-100 text-blue-700 hover:bg-blue-100",
+};
+
+const criticalityColors: Record<string, string> = {
+  Critical: "bg-red-100 text-red-700 hover:bg-red-100",
+  High: "bg-orange-100 text-orange-700 hover:bg-orange-100",
+  Medium: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100",
+  Low: "bg-blue-100 text-blue-700 hover:bg-blue-100",
 };
 
 export default function AssetsPage() {
@@ -63,12 +75,15 @@ export default function AssetsPage() {
   const [assetTypeFilter, setAssetTypeFilter] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [severityFilter, setSeverityFilter] = useState("");
+  const [criticalityFilter, setCriticalityFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [hasVulnsFilter, setHasVulnsFilter] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState("desc");
 
   const [assetTypes, setAssetTypes] = useState<Option[]>([]);
   const [departments, setDepartments] = useState<Option[]>([]);
+  const [tags, setTags] = useState<TagOption[]>([]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -86,11 +101,13 @@ export default function AssetsPage() {
     Promise.all([
       apiFetch("/asset-types", { signal: controller.signal }),
       apiFetch("/departments", { signal: controller.signal }),
+      apiFetch("/tags", { signal: controller.signal }),
     ])
-      .then(async ([atRes, deptRes]) => {
+      .then(async ([atRes, deptRes, tagRes]) => {
         if (!mountedRef.current) return;
         if (atRes.ok) setAssetTypes(await atRes.json());
         if (deptRes.ok) setDepartments(await deptRes.json());
+        if (tagRes.ok) setTags(await tagRes.json());
       })
       .catch(() => {});
 
@@ -113,6 +130,8 @@ export default function AssetsPage() {
     if (assetTypeFilter && assetTypeFilter !== " ") params.set("assetTypeId", assetTypeFilter);
     if (departmentFilter && departmentFilter !== " ") params.set("departmentId", departmentFilter);
     if (severityFilter && severityFilter !== " ") params.set("severity", severityFilter);
+    if (criticalityFilter && criticalityFilter !== " ") params.set("criticality", criticalityFilter);
+    if (tagFilter && tagFilter !== " ") params.set("tag", tagFilter);
     if (hasVulnsFilter && hasVulnsFilter !== " ") params.set("hasVulnerabilities", hasVulnsFilter);
 
     apiFetch(`/assets?${params.toString()}`, { signal: controller.signal })
@@ -130,7 +149,7 @@ export default function AssetsPage() {
       });
 
     return () => controller.abort();
-  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, debouncedSearch, statusFilter, assetTypeFilter, departmentFilter, severityFilter, hasVulnsFilter]);
+  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, debouncedSearch, statusFilter, assetTypeFilter, departmentFilter, severityFilter, criticalityFilter, tagFilter, hasVulnsFilter]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
@@ -154,6 +173,8 @@ export default function AssetsPage() {
               ...(assetTypeFilter && assetTypeFilter !== " " ? { assetTypeId: assetTypeFilter } : {}),
               ...(departmentFilter && departmentFilter !== " " ? { departmentId: departmentFilter } : {}),
               ...(severityFilter && severityFilter !== " " ? { severity: severityFilter } : {}),
+              ...(criticalityFilter && criticalityFilter !== " " ? { criticality: criticalityFilter } : {}),
+              ...(tagFilter && tagFilter !== " " ? { tag: tagFilter } : {}),
               ...(hasVulnsFilter && hasVulnsFilter !== " " ? { hasVulnerabilities: hasVulnsFilter } : {}),
             }}
           />
@@ -252,6 +273,29 @@ export default function AssetsPage() {
             <SelectItem value="LOW">LOW</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={criticalityFilter} onValueChange={(v) => { setCriticalityFilter(v ?? ""); setPage(1); }}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue placeholder="Criticality" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value=" ">All Criticality</SelectItem>
+            <SelectItem value="Critical">Critical</SelectItem>
+            <SelectItem value="High">High</SelectItem>
+            <SelectItem value="Medium">Medium</SelectItem>
+            <SelectItem value="Low">Low</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={tagFilter} onValueChange={(v) => { setTagFilter(v ?? ""); setPage(1); }}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Tag" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value=" ">All Tags</SelectItem>
+            {tags.map((t) => (
+              <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={hasVulnsFilter} onValueChange={(v) => { setHasVulnsFilter(v ?? ""); setPage(1); }}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="Has CVEs?" />
@@ -271,6 +315,7 @@ export default function AssetsPage() {
             <SelectItem value="name">Name</SelectItem>
             <SelectItem value="cvss">CVSS</SelectItem>
             <SelectItem value="vulnCount">CVE Count</SelectItem>
+            <SelectItem value="criticality">Criticality</SelectItem>
             <SelectItem value="lastScanned">Last Scanned</SelectItem>
           </SelectContent>
         </Select>
@@ -288,6 +333,8 @@ export default function AssetsPage() {
               <TableHead>Type</TableHead>
               <TableHead>Department</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Criticality</TableHead>
+              <TableHead>Tags</TableHead>
               <TableHead>CVEs</TableHead>
               <TableHead>Highest</TableHead>
               <TableHead>Last Scanned</TableHead>
@@ -297,14 +344,14 @@ export default function AssetsPage() {
           <TableBody>
             {(loading || !authReady) && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                   Loading...
                 </TableCell>
               </TableRow>
             )}
             {authReady && !loading && assets.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                   No assets found
                 </TableCell>
               </TableRow>
@@ -320,6 +367,22 @@ export default function AssetsPage() {
                 <TableCell className="text-sm text-muted-foreground">{asset.departmentName}</TableCell>
                 <TableCell>
                   <Badge variant="secondary">{asset.status}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge className={criticalityColors[asset.criticality] ?? ""}>
+                    {asset.criticality}
+                    {asset.isCriticalityAuto && <span className="ml-1 text-[10px] opacity-70">auto</span>}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {asset.tags.slice(0, 3).map((tag) => (
+                      <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>
+                    ))}
+                    {asset.tags.length > 3 && (
+                      <Badge variant="outline" className="text-xs">+{asset.tags.length - 3}</Badge>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell>
                   {asset.vulnerabilityCount > 0 ? (

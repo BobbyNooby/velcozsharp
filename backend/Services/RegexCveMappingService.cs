@@ -1,5 +1,6 @@
 using backend.Data;
 using backend.Models.Entities;
+using backend.Models.Enums;
 using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
 
@@ -14,12 +15,14 @@ public class RegexCveMappingService : ICveMappingService
 {
     private readonly AppDbContext _db;
     private readonly INvdApiService _nvdApi;
+    private readonly INotificationService _notifications;
     private readonly ILogger<RegexCveMappingService> _logger;
 
-    public RegexCveMappingService(AppDbContext db, INvdApiService nvdApi, ILogger<RegexCveMappingService> logger)
+    public RegexCveMappingService(AppDbContext db, INvdApiService nvdApi, INotificationService notifications, ILogger<RegexCveMappingService> logger)
     {
         _db = db;
         _nvdApi = nvdApi;
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -79,6 +82,7 @@ public class RegexCveMappingService : ICveMappingService
         }
 
         var matches = new List<AssetVulnerability>();
+        var newCriticalOrHighCveIds = new List<string>();
         double? highestCvss = null;
         string? highestSeverity = null;
 
@@ -122,7 +126,7 @@ public class RegexCveMappingService : ICveMappingService
             if (existingLink == null)
             {
                 var matchedKeyword = FindMatchedKeyword(description, keywords);
-                
+
                 var link = new AssetVulnerability
                 {
                     AssetId = assetId,
@@ -134,6 +138,11 @@ public class RegexCveMappingService : ICveMappingService
                 };
                 _db.AssetVulnerabilities.Add(link);
                 matches.Add(link);
+
+                if (IsCriticalOrHigh(cvssData?.BaseSeverity))
+                {
+                    newCriticalOrHighCveIds.Add(cve.Id);
+                }
             }
             else
             {
@@ -153,13 +162,47 @@ public class RegexCveMappingService : ICveMappingService
         asset.HighestSeverity = highestSeverity;
         asset.LastScannedAt = DateTime.UtcNow;
 
+        if (asset.IsCriticalityAuto)
+        {
+            asset.Criticality = MapSeverityToCriticality(highestSeverity);
+        }
+
         await _db.SaveChangesAsync();
+
+        if (newCriticalOrHighCveIds.Count > 0)
+        {
+            await _notifications.NotifyCriticalVulnerabilityAsync(
+                organizationId,
+                assetId,
+                asset.Name,
+                newCriticalOrHighCveIds);
+        }
 
         _logger.LogInformation(
             "Scan complete for {AssetName}: {NewMatches} new, {Total} total CVEs matched",
             asset.Name, matches.Count(m => m.DetectedAt > DateTime.UtcNow.AddMinutes(-1)), matches.Count);
 
         return matches;
+    }
+
+    private static bool IsCriticalOrHigh(string? severity)
+    {
+        return !string.IsNullOrEmpty(severity)
+            && (severity.Equals("CRITICAL", StringComparison.OrdinalIgnoreCase)
+                || severity.Equals("HIGH", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static AssetCriticality MapSeverityToCriticality(string? severity)
+    {
+        if (string.IsNullOrEmpty(severity)) return AssetCriticality.Medium;
+        return severity.ToUpperInvariant() switch
+        {
+            "CRITICAL" => AssetCriticality.Critical,
+            "HIGH" => AssetCriticality.High,
+            "MEDIUM" => AssetCriticality.Medium,
+            "LOW" => AssetCriticality.Low,
+            _ => AssetCriticality.Medium
+        };
     }
 
     private static bool IsRelevant(string description, List<string> keywords, Dictionary<string, object> properties)

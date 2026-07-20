@@ -18,6 +18,10 @@ public class Asset
     public Department Department { get; set; } = null!;
 
     public AssetStatus Status { get; set; } = AssetStatus.Active;
+    public AssetCriticality Criticality { get; set; } = AssetCriticality.Medium;
+    public bool IsCriticalityAuto { get; set; } = true;
+
+    public List<string>? Tags { get; set; }
 
     public Dictionary<string, object> Properties { get; set; } = new();
 

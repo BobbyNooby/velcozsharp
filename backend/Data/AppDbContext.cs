@@ -22,6 +22,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<ScanJob> ScanJobs => Set<ScanJob>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<RecurringScanConfig> RecurringScanConfigs => Set<RecurringScanConfig>();
+    public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<UserOrganization> UserOrganizations => Set<UserOrganization>();
 
     public AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext? tenantContext = null)
@@ -62,6 +63,12 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
 
         modelBuilder.Entity<AuditLog>()
             .HasQueryFilter(al => al.OrganizationId == CurrentOrganizationId);
+
+        modelBuilder.Entity<Notification>()
+            .HasQueryFilter(n => n.OrganizationId == CurrentOrganizationId);
+
+        modelBuilder.Entity<Notification>()
+            .HasIndex(n => new { n.OrganizationId, n.IsRead, n.CreatedAt });
 
         // UserOrganization join table
         modelBuilder.Entity<UserOrganization>()
@@ -153,6 +160,9 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
 
         modelBuilder.Entity<Asset>()
             .HasIndex(a => a.HighestSeverity);
+
+        modelBuilder.Entity<Asset>()
+            .HasIndex(a => a.Criticality);
 
         modelBuilder.Entity<AuditLog>()
             .HasIndex(a => new { a.OrganizationId, a.EntityType, a.Timestamp });

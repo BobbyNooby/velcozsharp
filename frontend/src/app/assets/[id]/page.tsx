@@ -22,9 +22,14 @@ type Asset = {
   id: string;
   name: string;
   description?: string;
+  assetTypeId: string;
   assetTypeName: string;
+  departmentId: string;
   departmentName: string;
   status: string;
+  criticality: string;
+  isCriticalityAuto: boolean;
+  tags: string[];
   properties: Record<string, any>;
   highestCvssScore?: number;
   highestSeverity?: string;
@@ -49,6 +54,13 @@ const statusColors: Record<string, string> = {
   Mitigated: "bg-green-100 text-green-700",
 };
 
+const criticalityColors: Record<string, string> = {
+  Critical: "bg-red-100 text-red-700 border-red-300",
+  High: "bg-orange-100 text-orange-700 border-orange-300",
+  Medium: "bg-yellow-100 text-yellow-700 border-yellow-300",
+  Low: "bg-blue-100 text-blue-700 border-blue-300",
+};
+
 export default function AssetDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -61,6 +73,10 @@ export default function AssetDetailPage() {
   const [asset, setAsset] = useState<Asset | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+
+  const [editCriticality, setEditCriticality] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -82,6 +98,8 @@ export default function AssetDetailPage() {
         if (res.ok) {
           const data = await res.json();
           setAsset(data);
+          setEditCriticality(data.criticality);
+          setEditTags((data.tags ?? []).join(", "));
         } else if (res.status === 404) {
           setMessage("Asset not found");
         } else {
@@ -133,17 +151,48 @@ export default function AssetDetailPage() {
       const res = await apiFetch(`/scan/assets/${assetId}`, { method: "POST" });
       if (res.ok && mountedRef.current) {
         const data = await res.json();
-        setMessage(`Scan complete: ${data.vulnerabilitiesFound} CVE(s) found`);
-        // Re-fetch asset to get updated vulnerabilities
-        const assetRes = await apiFetch(`/assets/${assetId}`);
-        if (assetRes.ok && mountedRef.current) {
-          const assetData = await assetRes.json();
-          setAsset(assetData);
-        }
+        setMessage(`Scan queued: job ${data.jobId}`);
       }
     } catch {
       if (mountedRef.current) setMessage("Scan failed");
     }
+  };
+
+  const saveDetails = async () => {
+    if (!asset) return;
+    setSaving(true);
+    try {
+      const body = {
+        name: asset.name,
+        description: asset.description,
+        departmentId: asset.departmentId,
+        status: asset.status,
+        criticality: editCriticality,
+        tags: editTags.split(",").map((t) => t.trim()).filter(Boolean),
+        properties: asset.properties,
+      };
+      const res = await apiFetch(`/assets/${assetId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok && mountedRef.current) {
+        setMessage("Saved");
+        const assetRes = await apiFetch(`/assets/${assetId}`);
+        if (assetRes.ok && mountedRef.current) {
+          const data = await assetRes.json();
+          setAsset(data);
+          setEditCriticality(data.criticality);
+          setEditTags((data.tags ?? []).join(", "));
+        }
+      } else {
+        const err = await res.json();
+        setMessage(err.message ?? "Save failed");
+      }
+    } catch {
+      if (mountedRef.current) setMessage("Network error");
+    }
+    setSaving(false);
   };
 
   if (loading || !authReady) {
@@ -177,10 +226,10 @@ export default function AssetDetailPage() {
             &larr; Back to Dashboard
           </Button>
           <h1 className="text-2xl font-bold">{asset.name}</h1>
-          <div className="text-sm text-gray-600 mt-1">
-            {asset.assetTypeName} &bull; {asset.departmentName} &bull;
+          <div className="text-sm text-gray-600 mt-1 flex flex-wrap items-center gap-2">
+            <span>{asset.assetTypeName} &bull; {asset.departmentName}</span>
             <span
-              className={`ml-1 inline-block text-xs px-2 py-0.5 rounded ${
+              className={`inline-block text-xs px-2 py-0.5 rounded ${
                 asset.status === "Active"
                   ? "bg-green-100 text-green-700"
                   : asset.status === "Retired"
@@ -190,6 +239,14 @@ export default function AssetDetailPage() {
             >
               {asset.status}
             </span>
+            <span className={`inline-block text-xs px-2 py-0.5 rounded border ${criticalityColors[asset.criticality] ?? "bg-gray-100 text-gray-600"}`}>
+              {asset.criticality}
+            </span>
+            {asset.tags.map((tag) => (
+              <span key={tag} className="inline-block text-xs px-2 py-0.5 rounded border bg-gray-50 text-gray-600">
+                {tag}
+              </span>
+            ))}
           </div>
         </div>
         <Button onClick={scanAsset}>Rescan CVEs</Button>
@@ -243,6 +300,39 @@ export default function AssetDetailPage() {
           </div>
           <div className="text-xs text-gray-500">
             Last scanned: {asset.lastScannedAt ? new Date(asset.lastScannedAt).toLocaleString() : "Never"}
+          </div>
+        </div>
+
+        <div className="border rounded-lg p-4 space-y-3">
+          <h2 className="font-semibold">Classification</h2>
+          <div className="space-y-2">
+            <div>
+              <label className="text-xs text-gray-500">Criticality</label>
+              <select
+                value={editCriticality}
+                onChange={(e) => setEditCriticality(e.target.value)}
+                className="w-full border rounded px-2 py-1 text-sm"
+              >
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+              {asset.isCriticalityAuto && <div className="text-[10px] text-gray-400">Auto-detected from scan</div>}
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Tags (comma separated)</label>
+              <input
+                type="text"
+                value={editTags}
+                onChange={(e) => setEditTags(e.target.value)}
+                className="w-full border rounded px-2 py-1 text-sm"
+                placeholder="production, dmz, legacy"
+              />
+            </div>
+            <Button size="sm" onClick={saveDetails} disabled={saving}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
           </div>
         </div>
       </div>
