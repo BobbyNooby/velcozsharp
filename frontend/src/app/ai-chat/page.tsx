@@ -50,7 +50,7 @@ export default function AiChatPage() {
       <div>
         <h1 className="text-2xl font-bold">AI Chat Demo</h1>
         <p className="text-sm text-gray-500">
-          Test the OpenRouter connection. Uses <code className="bg-gray-100 px-1 rounded">deepseek/deepseek-chat:free</code>.
+          Test the OpenRouter connection. Uses <code className="bg-gray-100 px-1 rounded">openrouter/free</code> (random free model).
         </p>
       </div>
 

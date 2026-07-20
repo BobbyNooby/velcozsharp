@@ -22,7 +22,7 @@ public class OpenRouterService : IOpenRouterService
         _logger = logger;
 
         var apiKey = configuration["OpenRouter:ApiKey"] ?? "";
-        var model = configuration["OpenRouter:Model"] ?? "deepseek/deepseek-chat:free";
+        var model = configuration["OpenRouter:Model"] ?? "openrouter/free";
 
         _model = model;
 
