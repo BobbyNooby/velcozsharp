@@ -1,4 +1,6 @@
 using backend.Data;
+using backend.Hubs;
+using backend.Infrastructure.Middleware;
 using backend.Models.Entities;
 using backend.Services;
 using Microsoft.AspNetCore.Identity;
@@ -49,6 +51,7 @@ builder.Services.ConfigureApplicationCookie(options =>
 });
 
 builder.Services.AddAuthorization();
+builder.Services.AddProblemDetails();
 
 // CORS for dev
 builder.Services.AddCors(options =>
@@ -92,6 +95,10 @@ builder.Services.AddScoped<ICveMappingService, RegexCveMappingService>();
 // Audit logging
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
+// Notifications
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddSignalR();
+
 // Background worker for async scan jobs
 builder.Services.AddHostedService<BackgroundScanWorker>();
 
@@ -123,6 +130,9 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseMiddleware<RequestLoggingMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -136,5 +146,6 @@ app.UseAuthorization();
 app.UseHttpsRedirection();
 
 app.MapControllers();
+app.MapHub<NotificationHub>("hubs/notifications");
 
 app.Run();
