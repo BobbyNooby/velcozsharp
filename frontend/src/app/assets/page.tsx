@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useOrg, useApiFetch, useDebounce } from "@/lib/api";
+import { ExportButton } from "@/components/export-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -144,9 +145,22 @@ export default function AssetsPage() {
     <div className="max-w-7xl mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Assets</h1>
-        <Button>
-          <Link href="/cve-mapping">Go to Dashboard</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <ExportButton
+            basePath="/export/assets"
+            params={{
+              ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+              ...(statusFilter && statusFilter !== " " ? { status: statusFilter } : {}),
+              ...(assetTypeFilter && assetTypeFilter !== " " ? { assetTypeId: assetTypeFilter } : {}),
+              ...(departmentFilter && departmentFilter !== " " ? { departmentId: departmentFilter } : {}),
+              ...(severityFilter && severityFilter !== " " ? { severity: severityFilter } : {}),
+              ...(hasVulnsFilter && hasVulnsFilter !== " " ? { hasVulnerabilities: hasVulnsFilter } : {}),
+            }}
+          />
+          <Button>
+            <Link href="/cve-mapping">Go to Dashboard</Link>
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}

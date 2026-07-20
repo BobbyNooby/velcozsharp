@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useOrg, useApiFetch } from "@/lib/api";
+import { ExportButton } from "@/components/export-button";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -158,7 +159,10 @@ export default function ScanSchedulesPage() {
           <h1 className="text-3xl font-bold">Scan Schedules</h1>
           <p className="text-sm text-gray-600">Configure recurring scans</p>
         </div>
-        <Button onClick={() => { resetForm(); setShowForm(true); }}>New Schedule</Button>
+        <div className="flex items-center gap-2">
+          <ExportButton basePath="/export/scan-jobs" />
+          <Button onClick={() => { resetForm(); setShowForm(true); }}>New Schedule</Button>
+        </div>
       </div>
 
       {message && (

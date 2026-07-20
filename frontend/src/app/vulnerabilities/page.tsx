@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useOrg, useApiFetch, useDebounce } from "@/lib/api";
+import { ExportButton } from "@/components/export-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -196,9 +197,20 @@ export default function VulnerabilitiesPage() {
     <div className="max-w-7xl mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Vulnerabilities</h1>
-        <Button>
-          <Link href="/cve-mapping">Go to Dashboard</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <ExportButton
+            basePath="/export/vulnerabilities"
+            params={{
+              ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+              ...(severityFilter && severityFilter !== " " ? { severity: severityFilter } : {}),
+              ...(statusFilter && statusFilter !== " " ? { status: statusFilter } : {}),
+              ...(assetTypeFilter && assetTypeFilter !== " " ? { assetTypeId: assetTypeFilter } : {}),
+            }}
+          />
+          <Button>
+            <Link href="/cve-mapping">Go to Dashboard</Link>
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
