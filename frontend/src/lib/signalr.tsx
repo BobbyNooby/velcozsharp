@@ -34,7 +34,7 @@ export function SignalRProvider({ children }: { children: ReactNode }) {
     if (!authReady) return;
 
     const conn = new signalR.HubConnectionBuilder()
-      .withUrl("http://localhost:5038/hubs/notifications", {
+      .withUrl(`${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:5038/api").replace("/api", "")}/hubs/notifications`, {
         withCredentials: true,
         transport: signalR.HttpTransportType.WebSockets |
                    signalR.HttpTransportType.ServerSentEvents |

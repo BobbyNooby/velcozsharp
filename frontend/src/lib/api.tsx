@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 
-const API_BASE = "http://localhost:5038/api";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5038/api";
 
 export type Org = {
   id: string;
@@ -113,6 +113,15 @@ export function useAuthSession() {
       })
       .catch((err) => {
         console.error("[Auth] /auth/me fetch failed:", err);
+        if (err instanceof TypeError) {
+          console.error(
+            `[Auth] Cannot reach backend at ${API_BASE}. Possible causes:\n` +
+            `1. Backend is not running on ${API_BASE}\n` +
+            `2. CORS blocked the request\n` +
+            `3. Page loaded over HTTPS but backend is HTTP (mixed content)\n` +
+            `Set NEXT_PUBLIC_API_URL env var if backend runs elsewhere.`
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) {
