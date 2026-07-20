@@ -1,5 +1,6 @@
 using backend.Data;
 using backend.Hubs;
+using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
 using backend.Services;
@@ -170,6 +171,7 @@ public class BackgroundScanWorker : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var cveMapping = scope.ServiceProvider.GetRequiredService<ICveMappingService>();
+        var aiCveMapping = scope.ServiceProvider.GetRequiredService<IAiCveMappingService>();
         var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
         // Find next queued job (FIFO) - ignore tenant filter because background worker has no HTTP context
@@ -189,8 +191,8 @@ public class BackgroundScanWorker : BackgroundService
         job.StartedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Processing scan job {JobId} (Type: {Type}, Org: {OrgId})",
-            job.Id, job.Type, job.OrganizationId);
+            _logger.LogInformation("Processing scan job {JobId} (Type: {Type}, Org: {OrgId}, AI: {UseAi})",
+                job.Id, job.Type, job.OrganizationId, job.UseAi);
 
         try
         {
@@ -218,40 +220,89 @@ public class BackgroundScanWorker : BackgroundService
 
             job.TotalAssets = assetIds.Count;
 
-            foreach (var assetId in assetIds)
+            if (job.UseAi)
             {
-                if (ct.IsCancellationRequested) break;
-
-                try
+                // AI deep scan path: 2 AI calls per chunk of 50 assets
+                var progress = new Progress<AiBulkScanProgress>(async p =>
                 {
-                    // Update current asset name for progress visibility
-                    var assetName = await db.Assets
-                        .Where(a => a.Id == assetId)
-                        .Select(a => a.Name)
-                        .FirstOrDefaultAsync(ct);
-                    job.CurrentAssetName = assetName ?? assetId.ToString();
-                    await db.SaveChangesAsync(ct);
-
-                    // Small delay to respect NVD rate limits
-                    await Task.Delay(600, ct);
-                    var matches = await cveMapping.ScanAssetAsync(assetId, job.OrganizationId);
-                    totalFound += matches.Count;
-                    processed++;
-
-                    await _hub.Clients.Group(job.OrganizationId.ToString()).SendAsync("ScanProgress", new
+                    job.CurrentAssetName = p.CurrentAssetName;
+                    job.ProcessedAssets = p.ProcessedAssets;
+                    try
                     {
-                        jobId = job.Id,
-                        processedAssets = processed,
-                        totalAssets = assetIds.Count,
-                        currentAssetName = job.CurrentAssetName,
-                        newVulnerabilitiesFound = totalFound,
-                        status = "Running"
-                    }, ct);
-                }
-                catch (Exception ex)
+                        await _hub.Clients.Group(job.OrganizationId.ToString()).SendAsync("ScanProgress", new
+                        {
+                            jobId = job.Id,
+                            processedAssets = p.ProcessedAssets,
+                            totalAssets = p.TotalAssets,
+                            currentAssetName = p.CurrentAssetName,
+                            currentChunk = p.CurrentChunk,
+                            totalChunks = p.TotalChunks,
+                            newVulnerabilitiesFound = p.TotalCvesFound,
+                            stage = p.Stage,
+                            status = "Running"
+                        }, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send AI scan progress");
+                    }
+                });
+
+                var aiResults = await aiCveMapping.ScanBulkAsync(assetIds, job.OrganizationId, progress, ct);
+                processed = aiResults.Count;
+                totalFound = aiResults.Sum(r => r.CvesNewlyAssigned);
+
+                await _hub.Clients.Group(job.OrganizationId.ToString()).SendAsync("ScanProgress", new
                 {
-                    _logger.LogWarning(ex, "Scan failed for asset {AssetId} in job {JobId}", assetId, job.Id);
-                    processed++;
+                    jobId = job.Id,
+                    processedAssets = processed,
+                    totalAssets = assetIds.Count,
+                    currentAssetName = aiResults.LastOrDefault()?.AssetName,
+                    currentChunk = aiResults.Count > 0 ? 1 : 0,
+                    totalChunks = 1,
+                    newVulnerabilitiesFound = totalFound,
+                    stage = "Completed",
+                    status = "Running"
+                }, ct);
+            }
+            else
+            {
+                // Regex fast scan path: one asset at a time
+                foreach (var assetId in assetIds)
+                {
+                    if (ct.IsCancellationRequested) break;
+
+                    try
+                    {
+                        // Update current asset name for progress visibility
+                        var assetName = await db.Assets
+                            .Where(a => a.Id == assetId)
+                            .Select(a => a.Name)
+                            .FirstOrDefaultAsync(ct);
+                        job.CurrentAssetName = assetName ?? assetId.ToString();
+                        await db.SaveChangesAsync(ct);
+
+                        // Small delay to respect NVD rate limits
+                        await Task.Delay(600, ct);
+                        var matches = await cveMapping.ScanAssetAsync(assetId, job.OrganizationId);
+                        totalFound += matches.Count;
+                        processed++;
+
+                        await _hub.Clients.Group(job.OrganizationId.ToString()).SendAsync("ScanProgress", new
+                        {
+                            jobId = job.Id,
+                            processedAssets = processed,
+                            totalAssets = assetIds.Count,
+                            currentAssetName = job.CurrentAssetName,
+                            newVulnerabilitiesFound = totalFound,
+                            status = "Running"
+                        }, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Scan failed for asset {AssetId} in job {JobId}", assetId, job.Id);
+                        processed++;
+                    }
                 }
             }
 

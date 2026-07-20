@@ -91,6 +91,7 @@ builder.Services.AddScoped<IAssetTypeTemplateService, AssetTypeTemplateService>(
 // NVD / Scan services
 builder.Services.AddHttpClient<INvdApiService, NvdApiService>();
 builder.Services.AddScoped<ICveMappingService, RegexCveMappingService>();
+builder.Services.AddScoped<IAiCveMappingService, AiCveMappingService>();
 
 // Audit logging
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();

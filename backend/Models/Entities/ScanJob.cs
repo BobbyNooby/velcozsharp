@@ -10,6 +10,7 @@ public class ScanJob
 
     public ScanJobType Type { get; set; }
     public ScanJobStatus Status { get; set; } = ScanJobStatus.Queued;
+    public bool UseAi { get; set; }
 
     public List<Guid>? TargetAssetIds { get; set; }
 

@@ -52,7 +52,7 @@ public class ScanController : TenantControllerBase
     }
 
     [HttpPost("assets/{assetId:guid}")]
-    public async Task<IActionResult> ScanAsset(Guid assetId)
+    public async Task<IActionResult> ScanAsset(Guid assetId, [FromQuery] bool useAi = false)
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
@@ -65,12 +65,16 @@ public class ScanController : TenantControllerBase
 
         if (asset == null) return NotFound();
 
+        var org = await _db.Organizations.FindAsync(orgId.Value);
+        var effectiveUseAi = useAi || (org?.IsAiEnabled ?? false);
+
         var job = new ScanJob
         {
             Id = Guid.NewGuid(),
             OrganizationId = orgId.Value,
             Type = ScanJobType.Single,
             Status = ScanJobStatus.Queued,
+            UseAi = effectiveUseAi,
             TargetAssetIds = [assetId],
             TotalAssets = 1,
             CreatedAt = DateTime.UtcNow
@@ -85,7 +89,7 @@ public class ScanController : TenantControllerBase
     }
 
     [HttpPost("assets/bulk")]
-    public async Task<IActionResult> ScanBulk([FromBody] BulkScanRequest request)
+    public async Task<IActionResult> ScanBulk([FromBody] BulkScanRequest request, [FromQuery] bool useAi = false)
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
@@ -106,12 +110,16 @@ public class ScanController : TenantControllerBase
         if (invalidIds.Count > 0)
             return BadRequest(new { message = "Assets not found in organization" });
 
+        var org = await _db.Organizations.FindAsync(orgId.Value);
+        var effectiveUseAi = useAi || (org?.IsAiEnabled ?? false);
+
         var job = new ScanJob
         {
             Id = Guid.NewGuid(),
             OrganizationId = orgId.Value,
             Type = ScanJobType.Bulk,
             Status = ScanJobStatus.Queued,
+            UseAi = effectiveUseAi,
             TargetAssetIds = validAssets,
             TotalAssets = validAssets.Count,
             CreatedAt = DateTime.UtcNow
@@ -126,7 +134,7 @@ public class ScanController : TenantControllerBase
     }
 
     [HttpPost("assets/all")]
-    public async Task<IActionResult> ScanAll()
+    public async Task<IActionResult> ScanAll([FromQuery] bool useAi = false)
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
@@ -142,12 +150,16 @@ public class ScanController : TenantControllerBase
         if (assetIds.Count == 0)
             return Ok(new { message = "No assets to scan", scanned = 0 });
 
+        var org = await _db.Organizations.FindAsync(orgId.Value);
+        var effectiveUseAi = useAi || (org?.IsAiEnabled ?? false);
+
         var job = new ScanJob
         {
             Id = Guid.NewGuid(),
             OrganizationId = orgId.Value,
             Type = ScanJobType.All,
             Status = ScanJobStatus.Queued,
+            UseAi = effectiveUseAi,
             TotalAssets = assetIds.Count,
             CreatedAt = DateTime.UtcNow
         };
