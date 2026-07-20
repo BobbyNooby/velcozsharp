@@ -1,5 +1,6 @@
 using backend.Data;
 using backend.Infrastructure.Mapping;
+using backend.Infrastructure.Pagination;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
@@ -25,18 +26,45 @@ public class AssetTypesController : TenantControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(
+        [FromQuery] string? search,
+        [FromQuery] bool? includeInactive,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortOrder,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
 
-        var types = await _db.AssetTypeDefinitions
-            .Include(at => at.Fields)
-            .Where(at => at.IsActive)
-            .OrderBy(at => at.Name)
-            .ToListAsync();
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        return Ok(types.Select(at => at.ToResponse()).ToList());
+        var query = _db.AssetTypeDefinitions
+            .Include(at => at.Fields)
+            .AsQueryable();
+
+        if (!includeInactive.HasValue || !includeInactive.Value)
+            query = query.Where(at => at.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(at => at.Name.ToLower().Contains(term));
+        }
+
+        var descending = sortOrder?.ToLower() != "asc";
+        query = sortBy?.ToLower() switch
+        {
+            "name" => descending ? query.OrderByDescending(at => at.Name) : query.OrderBy(at => at.Name),
+            _ => query.OrderBy(at => at.Name)
+        };
+
+        var result = await query
+            .Select(at => at.ToResponse())
+            .ToPagedResultAsync(page, pageSize);
+
+        return Ok(result);
     }
 
     [HttpGet("{id:guid}")]

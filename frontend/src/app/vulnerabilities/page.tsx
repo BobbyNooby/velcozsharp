@@ -91,10 +91,13 @@ export default function VulnerabilitiesPage() {
     if (!orgId) return;
     const controller = new AbortController();
 
-    apiFetch("/asset-types", { signal: controller.signal })
+    apiFetch("/asset-types?pageSize=100", { signal: controller.signal })
       .then(async (res) => {
         if (!mountedRef.current) return;
-        if (res.ok) setAssetTypes(await res.json());
+        if (res.ok) {
+          const data = await res.json();
+          setAssetTypes(data.items ?? []);
+        }
       })
       .catch(() => {});
 

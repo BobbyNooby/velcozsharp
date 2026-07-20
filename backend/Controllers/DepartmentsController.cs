@@ -1,4 +1,5 @@
 using backend.Data;
+using backend.Infrastructure.Pagination;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
@@ -20,21 +21,48 @@ public class DepartmentsController : TenantControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(
+        [FromQuery] string? search,
+        [FromQuery] bool? includeInactive,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortOrder,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
 
-        var departments = await _db.Departments
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var query = _db.Departments.AsQueryable();
+
+        if (!includeInactive.HasValue || !includeInactive.Value)
+            query = query.Where(d => d.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(d => d.Name.ToLower().Contains(term));
+        }
+
+        var descending = sortOrder?.ToLower() != "asc";
+        query = sortBy?.ToLower() switch
+        {
+            "name" => descending ? query.OrderByDescending(d => d.Name) : query.OrderBy(d => d.Name),
+            _ => query.OrderBy(d => d.Name)
+        };
+
+        var result = await query
             .Select(d => new DepartmentResponse
             {
                 Id = d.Id,
                 Name = d.Name,
                 IsActive = d.IsActive
             })
-            .ToListAsync();
+            .ToPagedResultAsync(page, pageSize);
 
-        return Ok(departments);
+        return Ok(result);
     }
 
     [HttpGet("{id:guid}")]

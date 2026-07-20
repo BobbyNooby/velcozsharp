@@ -25,6 +25,9 @@ public class AuditLogsController : TenantControllerBase
         [FromQuery] string? action,
         [FromQuery] string? entityType,
         [FromQuery] string? entityId,
+        [FromQuery] string? changedByUserId,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
@@ -47,6 +50,15 @@ public class AuditLogsController : TenantControllerBase
 
         if (!string.IsNullOrWhiteSpace(entityId))
             query = query.Where(l => l.EntityId == entityId);
+
+        if (!string.IsNullOrWhiteSpace(changedByUserId) && Guid.TryParse(changedByUserId, out var userId))
+            query = query.Where(l => l.ChangedByUserId == userId.ToString());
+
+        if (from.HasValue)
+            query = query.Where(l => l.Timestamp >= from.Value);
+
+        if (to.HasValue)
+            query = query.Where(l => l.Timestamp <= to.Value);
 
         var result = await query
             .Select(l => new AuditLogResponse

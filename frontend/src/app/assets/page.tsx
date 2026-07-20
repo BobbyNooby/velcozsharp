@@ -99,14 +99,20 @@ export default function AssetsPage() {
     const controller = new AbortController();
 
     Promise.all([
-      apiFetch("/asset-types", { signal: controller.signal }),
-      apiFetch("/departments", { signal: controller.signal }),
+      apiFetch("/asset-types?pageSize=100", { signal: controller.signal }),
+      apiFetch("/departments?pageSize=100", { signal: controller.signal }),
       apiFetch("/tags", { signal: controller.signal }),
     ])
       .then(async ([atRes, deptRes, tagRes]) => {
         if (!mountedRef.current) return;
-        if (atRes.ok) setAssetTypes(await atRes.json());
-        if (deptRes.ok) setDepartments(await deptRes.json());
+        if (atRes.ok) {
+          const data = await atRes.json();
+          setAssetTypes(data.items ?? []);
+        }
+        if (deptRes.ok) {
+          const data = await deptRes.json();
+          setDepartments(data.items ?? []);
+        }
         if (tagRes.ok) setTags(await tagRes.json());
       })
       .catch(() => {});

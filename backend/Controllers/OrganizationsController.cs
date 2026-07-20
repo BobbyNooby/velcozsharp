@@ -1,4 +1,5 @@
 using backend.Data;
+using backend.Infrastructure.Pagination;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
@@ -24,26 +25,55 @@ public class OrganizationsController : TenantControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(
+        [FromQuery] string? search,
+        [FromQuery] bool? activeOnly,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortOrder,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return Unauthorized();
 
-        // Return all orgs the user is a member of
-        var orgs = await _db.UserOrganizations
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var query = _db.UserOrganizations
             .Where(uo => uo.UserId == user.Id)
             .Include(uo => uo.Organization)
-            .Select(uo => new OrganizationResponse
-            {
-                Id = uo.Organization.Id,
-                Name = uo.Organization.Name,
-                Description = uo.Organization.Description,
-                IsActive = uo.Organization.IsActive,
-                CreatedAt = uo.Organization.CreatedAt
-            })
-            .ToListAsync();
+            .Select(uo => uo.Organization)
+            .AsQueryable();
 
-        return Ok(orgs);
+        if (!activeOnly.HasValue || activeOnly.Value)
+            query = query.Where(o => o.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(o => o.Name.ToLower().Contains(term));
+        }
+
+        var descending = sortOrder?.ToLower() != "asc";
+        query = sortBy?.ToLower() switch
+        {
+            "name" => descending ? query.OrderByDescending(o => o.Name) : query.OrderBy(o => o.Name),
+            "created" => descending ? query.OrderByDescending(o => o.CreatedAt) : query.OrderBy(o => o.CreatedAt),
+            _ => query.OrderBy(o => o.Name)
+        };
+
+        var result = await query
+            .Select(o => new OrganizationResponse
+            {
+                Id = o.Id,
+                Name = o.Name,
+                Description = o.Description,
+                IsActive = o.IsActive,
+                CreatedAt = o.CreatedAt
+            })
+            .ToPagedResultAsync(page, pageSize);
+
+        return Ok(result);
     }
 
     [HttpGet("{id:guid}")]
