@@ -140,7 +140,10 @@ public class ScanController : TenantControllerBase
     }
 
     [HttpGet("jobs")]
-    public async Task<IActionResult> GetJobs([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetJobs(
+        [FromQuery] string? status,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
@@ -148,8 +151,14 @@ public class ScanController : TenantControllerBase
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var result = await _db.ScanJobs
+        var query = _db.ScanJobs
             .Where(j => j.OrganizationId == orgId.Value)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ScanJobStatus>(status, true, out var jobStatus))
+            query = query.Where(j => j.Status == jobStatus);
+
+        var result = await query
             .OrderByDescending(j => j.CreatedAt)
             .Select(j => new ScanJobResponse
             {
@@ -168,6 +177,49 @@ public class ScanController : TenantControllerBase
             .ToPagedResultAsync(page, pageSize);
 
         return Ok(result);
+    }
+
+    [HttpPost("jobs/{id:guid}/cancel")]
+    public async Task<IActionResult> CancelJob(Guid id)
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var job = await _db.ScanJobs
+            .FirstOrDefaultAsync(j => j.Id == id && j.OrganizationId == orgId.Value);
+
+        if (job == null) return NotFound();
+
+        if (job.Status != ScanJobStatus.Queued)
+            return BadRequest(new { message = "Only queued jobs can be cancelled" });
+
+        job.Status = ScanJobStatus.Cancelled;
+        job.CompletedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { jobId = job.Id, status = job.Status.ToString() });
+    }
+
+    [HttpPost("jobs/{id:guid}/retry")]
+    public async Task<IActionResult> RetryJob(Guid id)
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var job = await _db.ScanJobs
+            .FirstOrDefaultAsync(j => j.Id == id && j.OrganizationId == orgId.Value);
+
+        if (job == null) return NotFound();
+
+        if (job.Status != ScanJobStatus.Failed && job.Status != ScanJobStatus.Cancelled)
+            return BadRequest(new { message = "Only failed or cancelled jobs can be retried" });
+
+        job.Status = ScanJobStatus.Queued;
+        job.ErrorMessage = null;
+        job.CompletedAt = null;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { jobId = job.Id, status = job.Status.ToString() });
     }
 
     [HttpGet("jobs/{id:guid}")]

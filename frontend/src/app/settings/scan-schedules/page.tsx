@@ -3,11 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useOrg, useApiFetch } from "@/lib/api";
 import { ExportButton } from "@/components/export-button";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import Link from "next/link";
-import { cn } from "@/lib/utils";
 
 type ScanSchedule = {
   id: string;
@@ -43,6 +41,12 @@ export default function ScanSchedulesPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
   // Form state
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -58,10 +62,14 @@ export default function ScanSchedulesPage() {
     if (!orgId) return;
     setLoading(true);
     try {
-      const res = await apiFetch("/scan-schedules");
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+      const res = await apiFetch(`/scan-schedules?${params.toString()}`);
       if (res.ok && mountedRef.current) {
         const data = await res.json();
-        setSchedules(data);
+        setSchedules(data.items ?? []);
+        setTotalCount(data.totalCount ?? 0);
       }
     } catch {} finally {
       if (mountedRef.current) setLoading(false);
@@ -70,7 +78,7 @@ export default function ScanSchedulesPage() {
 
   useEffect(() => {
     fetchSchedules();
-  }, [orgId, apiFetch]);
+  }, [orgId, apiFetch, page, pageSize]);
 
   const resetForm = () => {
     setShowForm(false);
@@ -124,13 +132,23 @@ export default function ScanSchedulesPage() {
 
   const toggleEnabled = async (s: ScanSchedule) => {
     try {
-      const res = await apiFetch(`/scan-schedules/${s.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: !s.enabled }),
-      });
+      const res = await apiFetch(`/scan-schedules/${s.id}/toggle`, { method: "POST" });
       if (res.ok) fetchSchedules();
     } catch {}
+  };
+
+  const runNow = async (s: ScanSchedule) => {
+    try {
+      const res = await apiFetch(`/scan-schedules/${s.id}/run-now`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMessage(data.message ?? "Scan job queued");
+      } else {
+        setMessage(data.message ?? "Failed to run schedule");
+      }
+    } catch {
+      setMessage("Network error");
+    }
   };
 
   const deleteSchedule = async (id: string) => {
@@ -260,6 +278,7 @@ export default function ScanSchedulesPage() {
                     </div>
                   </div>
                   <div className="flex gap-1">
+                    <Button variant="outline" size="sm" onClick={() => runNow(s)}>Run Now</Button>
                     <Button variant="outline" size="sm" onClick={() => startEdit(s)}>Edit</Button>
                     <Button variant="outline" size="sm" onClick={() => toggleEnabled(s)}>
                       {s.enabled ? "Disable" : "Enable"}
@@ -272,6 +291,33 @@ export default function ScanSchedulesPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalCount > 0 && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Showing {schedules.length} of {totalCount} schedules
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+              Previous
+            </Button>
+            <span className="text-sm">Page {page} of {totalPages}</span>
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+              Next
+            </Button>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              className="border rounded px-2 py-1 text-sm"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+          </div>
         </div>
       )}
     </div>

@@ -1,4 +1,5 @@
 using backend.Data;
+using backend.Infrastructure.Pagination;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
@@ -49,12 +50,25 @@ public class ScanScheduleController : TenantControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(
+        [FromQuery] bool? enabled,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
 
-        var schedules = await _db.RecurringScanConfigs
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var query = _db.RecurringScanConfigs
+            .Where(rc => rc.OrganizationId == orgId.Value)
+            .AsQueryable();
+
+        if (enabled.HasValue)
+            query = query.Where(rc => rc.Enabled == enabled.Value);
+
+        var result = await query
             .OrderBy(rc => rc.Name)
             .Select(rc => new ScanScheduleResponse
             {
@@ -67,9 +81,9 @@ public class ScanScheduleController : TenantControllerBase
                 LastRunAt = rc.LastRunAt,
                 CreatedAt = rc.CreatedAt
             })
-            .ToListAsync();
+            .ToPagedResultAsync(page, pageSize);
 
-        return Ok(schedules);
+        return Ok(result);
     }
 
     [HttpGet("{id:guid}")]
@@ -79,7 +93,7 @@ public class ScanScheduleController : TenantControllerBase
         if (!orgId.HasValue) return Forbid();
 
         var schedule = await _db.RecurringScanConfigs
-            .Where(rc => rc.Id == id)
+            .Where(rc => rc.Id == id && rc.OrganizationId == orgId.Value)
             .Select(rc => new ScanScheduleResponse
             {
                 Id = rc.Id,
@@ -163,7 +177,7 @@ public class ScanScheduleController : TenantControllerBase
         if (auth != null) return auth;
 
         var schedule = await _db.RecurringScanConfigs
-            .FirstOrDefaultAsync(rc => rc.Id == id);
+            .FirstOrDefaultAsync(rc => rc.Id == id && rc.OrganizationId == orgId.Value);
 
         if (schedule == null) return NotFound();
 
@@ -208,7 +222,7 @@ public class ScanScheduleController : TenantControllerBase
         if (auth != null) return auth;
 
         var schedule = await _db.RecurringScanConfigs
-            .FirstOrDefaultAsync(rc => rc.Id == id);
+            .FirstOrDefaultAsync(rc => rc.Id == id && rc.OrganizationId == orgId.Value);
 
         if (schedule == null) return NotFound();
 
@@ -216,5 +230,67 @@ public class ScanScheduleController : TenantControllerBase
         await _db.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    [HttpPost("{id:guid}/run-now")]
+    public async Task<IActionResult> RunNow(Guid id)
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var auth = await RequireOrgRoleAsync(RoleNames.Admin, RoleNames.SecurityAnalyst);
+        if (auth != null) return auth;
+
+        var schedule = await _db.RecurringScanConfigs
+            .FirstOrDefaultAsync(rc => rc.Id == id && rc.OrganizationId == orgId.Value);
+
+        if (schedule == null) return NotFound();
+
+        List<Guid>? targetIds = null;
+        if (schedule.Scope == ScanJobType.Bulk && schedule.TargetAssetIds?.Count > 0)
+        {
+            targetIds = schedule.TargetAssetIds;
+        }
+        else if (schedule.Scope == ScanJobType.Single && schedule.TargetAssetIds?.Count == 1)
+        {
+            targetIds = schedule.TargetAssetIds;
+        }
+
+        var job = new ScanJob
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = orgId.Value,
+            Type = schedule.Scope,
+            Status = ScanJobStatus.Queued,
+            TargetAssetIds = targetIds,
+            TotalAssets = 0,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.ScanJobs.Add(job);
+        await _db.SaveChangesAsync();
+
+        return Accepted(new { jobId = job.Id, message = "Scan job queued from schedule", status = "Queued" });
+    }
+
+    [HttpPost("{id:guid}/toggle")]
+    public async Task<IActionResult> Toggle(Guid id)
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
+        var schedule = await _db.RecurringScanConfigs
+            .FirstOrDefaultAsync(rc => rc.Id == id && rc.OrganizationId == orgId.Value);
+
+        if (schedule == null) return NotFound();
+
+        schedule.Enabled = !schedule.Enabled;
+        schedule.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { id = schedule.Id, enabled = schedule.Enabled });
     }
 }

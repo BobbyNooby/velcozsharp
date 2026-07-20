@@ -5,5 +5,6 @@ public enum ScanJobStatus
     Queued,
     Running,
     Completed,
-    Failed
+    Failed,
+    Cancelled
 }

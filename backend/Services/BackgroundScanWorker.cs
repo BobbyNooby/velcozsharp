@@ -1,8 +1,10 @@
 using backend.Data;
+using backend.Hubs;
 using backend.Models.Entities;
 using backend.Models.Enums;
 using backend.Services;
 using Cronos;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services;
@@ -11,11 +13,13 @@ public class BackgroundScanWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<BackgroundScanWorker> _logger;
+    private readonly IHubContext<NotificationHub> _hub;
 
-    public BackgroundScanWorker(IServiceProvider serviceProvider, ILogger<BackgroundScanWorker> logger)
+    public BackgroundScanWorker(IServiceProvider serviceProvider, ILogger<BackgroundScanWorker> logger, IHubContext<NotificationHub> hub)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
+        _hub = hub;
     }
 
     private DateTime _lastScheduleCheck = DateTime.MinValue;
@@ -61,6 +65,7 @@ public class BackgroundScanWorker : BackgroundService
     {
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
         // Get all enabled schedules across all orgs
         var schedules = await db.RecurringScanConfigs
@@ -124,6 +129,7 @@ public class BackgroundScanWorker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to process schedule {ScheduleId}", schedule.Id);
+                await notifications.NotifyScheduleFailedAsync(schedule.OrganizationId, schedule.Id, schedule.Name, ex.Message);
             }
         }
 
@@ -164,6 +170,7 @@ public class BackgroundScanWorker : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var cveMapping = scope.ServiceProvider.GetRequiredService<ICveMappingService>();
+        var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
         // Find next queued job (FIFO) - ignore tenant filter because background worker has no HTTP context
         var job = await db.ScanJobs
@@ -230,6 +237,16 @@ public class BackgroundScanWorker : BackgroundService
                     var matches = await cveMapping.ScanAssetAsync(assetId, job.OrganizationId);
                     totalFound += matches.Count;
                     processed++;
+
+                    await _hub.Clients.Group(job.OrganizationId.ToString()).SendAsync("ScanProgress", new
+                    {
+                        jobId = job.Id,
+                        processedAssets = processed,
+                        totalAssets = assetIds.Count,
+                        currentAssetName = job.CurrentAssetName,
+                        newVulnerabilitiesFound = totalFound,
+                        status = "Running"
+                    }, ct);
                 }
                 catch (Exception ex)
                 {
@@ -243,6 +260,35 @@ public class BackgroundScanWorker : BackgroundService
             job.Status = processed > 0 ? ScanJobStatus.Completed : ScanJobStatus.Failed;
             job.CompletedAt = DateTime.UtcNow;
 
+            await _hub.Clients.Group(job.OrganizationId.ToString()).SendAsync("ScanProgress", new
+            {
+                jobId = job.Id,
+                processedAssets = processed,
+                totalAssets = assetIds.Count,
+                currentAssetName = job.CurrentAssetName,
+                newVulnerabilitiesFound = totalFound,
+                status = job.Status.ToString()
+            }, ct);
+
+            if (job.Status == ScanJobStatus.Completed)
+            {
+                await notifications.NotifyScanCompletedAsync(
+                    job.OrganizationId,
+                    job.Id,
+                    $"{job.Type} scan",
+                    processed,
+                    assetIds.Count,
+                    totalFound);
+            }
+            else
+            {
+                await notifications.NotifyScanFailedAsync(
+                    job.OrganizationId,
+                    job.Id,
+                    $"{job.Type} scan",
+                    "No assets were successfully processed");
+            }
+
             _logger.LogInformation("Scan job {JobId} completed: {Processed}/{Total} assets, {Found} CVEs",
                 job.Id, processed, assetIds.Count, totalFound);
         }
@@ -251,6 +297,13 @@ public class BackgroundScanWorker : BackgroundService
             job.Status = ScanJobStatus.Failed;
             job.ErrorMessage = ex.Message;
             job.CompletedAt = DateTime.UtcNow;
+
+            await notifications.NotifyScanFailedAsync(
+                job.OrganizationId,
+                job.Id,
+                $"{job.Type} scan",
+                ex.Message);
+
             _logger.LogError(ex, "Scan job {JobId} failed", job.Id);
         }
 
