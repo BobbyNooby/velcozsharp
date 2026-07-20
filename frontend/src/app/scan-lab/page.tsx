@@ -253,6 +253,34 @@ export default function ScanLabPage() {
     }
   };
 
+  const cancelJob = async (jobId: string) => {
+    try {
+      const res = await apiFetch(`/scan/jobs/${jobId}/cancel`, { method: "POST" });
+      if (res.ok && mountedRef.current) {
+        setMessage(`Job ${jobId.slice(0, 8)} cancelling...`);
+        refreshJobs();
+      } else if (mountedRef.current) {
+        setMessage("Cancel request failed");
+      }
+    } catch {
+      if (mountedRef.current) setMessage("Cancel request failed");
+    }
+  };
+
+  const retryJob = async (jobId: string) => {
+    try {
+      const res = await apiFetch(`/scan/jobs/${jobId}/retry`, { method: "POST" });
+      if (res.ok && mountedRef.current) {
+        setMessage(`Job ${jobId.slice(0, 8)} queued for retry`);
+        refreshJobs();
+      } else if (mountedRef.current) {
+        setMessage("Retry request failed");
+      }
+    } catch {
+      if (mountedRef.current) setMessage("Retry request failed");
+    }
+  };
+
   const toggleAsset = (assetId: string) => {
     setSelectedAssets((prev) => {
       const next = new Set(prev);
@@ -397,6 +425,18 @@ export default function ScanLabPage() {
                       AI chunk {job.currentChunk} / {job.totalChunks}
                     </div>
                   )}
+
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => cancelJob(job.jobId)}
+                      className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      Cancel
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             );
@@ -534,7 +574,19 @@ export default function ScanLabPage() {
                           {job.completedAt && ` • ${new Date(job.completedAt).toLocaleString()}`}
                         </div>
                       </div>
-                      <div className="text-xs font-mono text-gray-400">{job.jobId.slice(0, 8)}</div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => retryJob(job.jobId)}
+                          disabled={activeJobs.length > 0}
+                          className="gap-1"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Retry
+                        </Button>
+                        <div className="text-xs font-mono text-gray-400">{job.jobId.slice(0, 8)}</div>
+                      </div>
                     </div>
                   ))}
                 </div>

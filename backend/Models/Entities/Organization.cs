@@ -8,6 +8,12 @@ public class Organization
     public string? NvdApiKey { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsAiEnabled { get; set; } = false;
+
+    // AI scan tuning (per-organization)
+    public int AiChunkSize { get; set; } = 50;
+    public int? AiMaxCvesPerAsset { get; set; }
+    public int AiMinScore { get; set; } = 0;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<UserOrganization> UserOrganizations { get; set; } = [];

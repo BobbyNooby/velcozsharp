@@ -15,12 +15,18 @@ public class BackgroundScanWorker : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<BackgroundScanWorker> _logger;
     private readonly IHubContext<NotificationHub> _hub;
+    private readonly IScanJobCancellationService _cancellationService;
 
-    public BackgroundScanWorker(IServiceProvider serviceProvider, ILogger<BackgroundScanWorker> logger, IHubContext<NotificationHub> hub)
+    public BackgroundScanWorker(
+        IServiceProvider serviceProvider,
+        ILogger<BackgroundScanWorker> logger,
+        IHubContext<NotificationHub> hub,
+        IScanJobCancellationService cancellationService)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _hub = hub;
+        _cancellationService = cancellationService;
     }
 
     private DateTime _lastScheduleCheck = DateTime.MinValue;
@@ -192,8 +198,12 @@ public class BackgroundScanWorker : BackgroundService
         job.StartedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
-            _logger.LogInformation("Processing scan job {JobId} (Type: {Type}, Org: {OrgId}, AI: {UseAi})",
-                job.Id, job.Type, job.OrganizationId, job.UseAi);
+        _logger.LogInformation("Processing scan job {JobId} (Type: {Type}, Org: {OrgId}, AI: {UseAi})",
+            job.Id, job.Type, job.OrganizationId, job.UseAi);
+
+        using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _cancellationService.RegisterJob(job.Id, jobCts);
+        var jobToken = jobCts.Token;
 
         try
         {
@@ -249,7 +259,7 @@ public class BackgroundScanWorker : BackgroundService
                     }
                 });
 
-                var aiResults = await aiCveMapping.ScanBulkAsync(assetIds, job.OrganizationId, progress, ct);
+                var aiResults = await aiCveMapping.ScanBulkAsync(assetIds, job.OrganizationId, progress, jobToken);
                 processed = aiResults.Count;
                 totalFound = aiResults.Sum(r => r.CvesNewlyAssigned);
 
@@ -284,8 +294,8 @@ public class BackgroundScanWorker : BackgroundService
                         await db.SaveChangesAsync(ct);
 
                         // Small delay to respect NVD rate limits
-                        await Task.Delay(600, ct);
-                        var matches = await cveMapping.ScanAssetAsync(assetId, job.OrganizationId);
+                        await Task.Delay(600, jobToken);
+                        var matches = await cveMapping.ScanAssetAsync(assetId, job.OrganizationId, jobToken);
                         totalFound += matches.Count;
                         processed++;
 
@@ -344,6 +354,20 @@ public class BackgroundScanWorker : BackgroundService
             _logger.LogInformation("Scan job {JobId} completed: {Processed}/{Total} assets, {Found} CVEs",
                 job.Id, processed, assetIds.Count, totalFound);
         }
+        catch (OperationCanceledException)
+        {
+            job.Status = ScanJobStatus.Cancelled;
+            job.ErrorMessage = "Cancelled by user";
+            job.CompletedAt = DateTime.UtcNow;
+
+            await notifications.NotifyScanFailedAsync(
+                job.OrganizationId,
+                job.Id,
+                $"{job.Type} scan",
+                "Cancelled by user");
+
+            _logger.LogInformation("Scan job {JobId} cancelled", job.Id);
+        }
         catch (Exception ex)
         {
             job.Status = ScanJobStatus.Failed;
@@ -357,6 +381,10 @@ public class BackgroundScanWorker : BackgroundService
                 ex.Message);
 
             _logger.LogError(ex, "Scan job {JobId} failed", job.Id);
+        }
+        finally
+        {
+            _cancellationService.UnregisterJob(job.Id);
         }
 
         await db.SaveChangesAsync(ct);

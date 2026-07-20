@@ -19,8 +19,6 @@ public interface IAiCveMappingService
 
 public class AiCveMappingService : IAiCveMappingService
 {
-    private const int AssetChunkSize = 50;
-
     private readonly AppDbContext _db;
     private readonly IOpenRouterService _openRouter;
     private readonly INvdApiService _nvdApi;
@@ -51,6 +49,9 @@ public class AiCveMappingService : IAiCveMappingService
 
         var org = await _db.Organizations.FindAsync([organizationId], ct);
         var nvdApiKey = org?.NvdApiKey;
+        var chunkSize = org?.AiChunkSize > 0 ? org.AiChunkSize : 50;
+        var maxCvesPerAsset = org?.AiMaxCvesPerAsset > 0 ? org.AiMaxCvesPerAsset : null;
+        var minScore = org?.AiMinScore >= 0 ? org.AiMinScore : 0;
 
         // Deduplicate asset IDs to avoid duplicate work and dictionary issues
         var uniqueAssetIds = assetIds.Distinct().ToList();
@@ -72,13 +73,13 @@ public class AiCveMappingService : IAiCveMappingService
         var results = new List<AiDeepScanResult>();
         var totalAssets = assets.Count;
         var processedAssets = 0;
-        var totalChunks = (int)Math.Ceiling((double)totalAssets / AssetChunkSize);
+        var totalChunks = (int)Math.Ceiling((double)totalAssets / chunkSize);
 
         for (var chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++)
         {
             var chunkAssets = assets
-                .Skip(chunkIndex * AssetChunkSize)
-                .Take(AssetChunkSize)
+                .Skip(chunkIndex * chunkSize)
+                .Take(chunkSize)
                 .ToList();
 
             progress?.Report(new AiBulkScanProgress
@@ -193,7 +194,11 @@ public class AiCveMappingService : IAiCveMappingService
             {
                 if (cvesPerAsset.TryGetValue(assetSummary.Id, out var assetCveList))
                 {
-                    var summaries = assetCveList.Select(ToCveSummary).Distinct().ToList();
+                    var summaries = assetCveList
+                        .Select(ToCveSummary)
+                        .Distinct()
+                        .Take(maxCvesPerAsset ?? int.MaxValue)
+                        .ToList();
                     assetsWithCves.Add(new AiAssetWithCves(assetSummary, summaries));
                 }
                 else
@@ -236,6 +241,7 @@ public class AiCveMappingService : IAiCveMappingService
                 cveById,
                 scoredResults,
                 organizationId,
+                minScore,
                 ct);
 
             results.AddRange(chunkResults);
@@ -263,6 +269,7 @@ public class AiCveMappingService : IAiCveMappingService
         Dictionary<string, NvdCve> cveById,
         List<AiScoredResult> scoredResults,
         Guid organizationId,
+        int minScore,
         CancellationToken ct)
     {
         var results = new List<AiDeepScanResult>();
@@ -292,8 +299,8 @@ public class AiCveMappingService : IAiCveMappingService
                         continue;
                     }
 
-                    // Score threshold: > 0 means save
-                    if (scoreResult.RelevanceScore <= 0)
+                    // Score threshold: only persist if score meets the org-configured minimum
+                    if (scoreResult.RelevanceScore < minScore)
                     {
                         continue;
                     }

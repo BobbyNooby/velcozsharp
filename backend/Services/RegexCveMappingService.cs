@@ -8,7 +8,7 @@ namespace backend.Services;
 
 public interface ICveMappingService
 {
-    Task<List<AssetVulnerability>> ScanAssetAsync(Guid assetId, Guid organizationId);
+    Task<List<AssetVulnerability>> ScanAssetAsync(Guid assetId, Guid organizationId, CancellationToken ct = default);
 }
 
 public class RegexCveMappingService : ICveMappingService
@@ -26,14 +26,14 @@ public class RegexCveMappingService : ICveMappingService
         _logger = logger;
     }
 
-    public async Task<List<AssetVulnerability>> ScanAssetAsync(Guid assetId, Guid organizationId)
+    public async Task<List<AssetVulnerability>> ScanAssetAsync(Guid assetId, Guid organizationId, CancellationToken ct = default)
     {
         _db.CurrentOrganizationId = organizationId;
 
         var asset = await _db.Assets
             .Include(a => a.AssetType)
                 .ThenInclude(at => at.Fields)
-            .FirstOrDefaultAsync(a => a.Id == assetId);
+            .FirstOrDefaultAsync(a => a.Id == assetId, ct);
 
         if (asset == null)
             throw new ArgumentException($"Asset {assetId} not found");
@@ -59,15 +59,15 @@ public class RegexCveMappingService : ICveMappingService
         _logger.LogInformation("Scanning asset {AssetName} with keywords: {Keywords}", asset.Name, string.Join(", ", keywords));
 
         // Query NVD
-        var org = await _db.Organizations.FindAsync(organizationId);
-        var nvdResult = await _nvdApi.SearchByKeywordsAsync(keywords, org?.NvdApiKey, default);
+        var org = await _db.Organizations.FindAsync([organizationId], ct);
+        var nvdResult = await _nvdApi.SearchByKeywordsAsync(keywords, org?.NvdApiKey, ct);
 
         // If no results with all keywords, try with fewer (product + version only)
         if ((nvdResult.Vulnerabilities == null || nvdResult.Vulnerabilities.Count == 0) && keywords.Count > 2)
         {
             var reducedKeywords = keywords.Take(2).ToList();
             _logger.LogInformation("No results with all keywords, trying reduced: {Keywords}", string.Join(", ", reducedKeywords));
-            nvdResult = await _nvdApi.SearchByKeywordsAsync(reducedKeywords, org?.NvdApiKey, default);
+            nvdResult = await _nvdApi.SearchByKeywordsAsync(reducedKeywords, org?.NvdApiKey, ct);
         }
 
         if (nvdResult.Vulnerabilities == null || nvdResult.Vulnerabilities.Count == 0)
@@ -76,7 +76,7 @@ public class RegexCveMappingService : ICveMappingService
             
             // Update last scanned even if no results
             asset.LastScannedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync(ct);
             
             return [];
         }
@@ -103,7 +103,7 @@ public class RegexCveMappingService : ICveMappingService
             }
 
             // Deduplication: check if we already have this CVE
-            var existingVuln = await _db.Vulnerabilities.FirstOrDefaultAsync(v => v.CveId == cve.Id);
+            var existingVuln = await _db.Vulnerabilities.FirstOrDefaultAsync(v => v.CveId == cve.Id, ct);
             if (existingVuln == null)
             {
                 existingVuln = new Vulnerability
@@ -121,7 +121,7 @@ public class RegexCveMappingService : ICveMappingService
 
             // Check if already linked to this asset
             var existingLink = await _db.AssetVulnerabilities
-                .FirstOrDefaultAsync(av => av.AssetId == assetId && av.VulnerabilityId == existingVuln.Id);
+                .FirstOrDefaultAsync(av => av.AssetId == assetId && av.VulnerabilityId == existingVuln.Id, ct);
 
             if (existingLink == null)
             {
@@ -167,7 +167,7 @@ public class RegexCveMappingService : ICveMappingService
             asset.Criticality = MapSeverityToCriticality(highestSeverity);
         }
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(ct);
 
         if (newCriticalOrHighCveIds.Count > 0)
         {

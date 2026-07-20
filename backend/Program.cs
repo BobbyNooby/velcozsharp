@@ -98,6 +98,7 @@ builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
 // Notifications
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddSingleton<IScanJobCancellationService, ScanJobCancellationService>();
 builder.Services.AddSignalR();
 
 // AI / OpenRouter

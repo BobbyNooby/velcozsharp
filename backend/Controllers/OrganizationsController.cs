@@ -72,6 +72,9 @@ public class OrganizationsController : TenantControllerBase
                 Description = o.Description,
                 IsActive = o.IsActive,
                 IsAiEnabled = o.IsAiEnabled,
+                AiChunkSize = o.AiChunkSize,
+                AiMaxCvesPerAsset = o.AiMaxCvesPerAsset,
+                AiMinScore = o.AiMinScore,
                 CreatedAt = o.CreatedAt
             })
             .ToPagedResultAsync(page, pageSize);
@@ -99,6 +102,9 @@ public class OrganizationsController : TenantControllerBase
                 Description = o.Description,
                 IsActive = o.IsActive,
                 IsAiEnabled = o.IsAiEnabled,
+                AiChunkSize = o.AiChunkSize,
+                AiMaxCvesPerAsset = o.AiMaxCvesPerAsset,
+                AiMinScore = o.AiMinScore,
                 CreatedAt = o.CreatedAt
             })
             .FirstOrDefaultAsync();
@@ -150,6 +156,9 @@ public class OrganizationsController : TenantControllerBase
             Description = org.Description,
             IsActive = org.IsActive,
             IsAiEnabled = org.IsAiEnabled,
+            AiChunkSize = org.AiChunkSize,
+            AiMaxCvesPerAsset = org.AiMaxCvesPerAsset,
+            AiMinScore = org.AiMinScore,
             CreatedAt = org.CreatedAt
         });
     }
@@ -170,6 +179,9 @@ public class OrganizationsController : TenantControllerBase
         org.Description = request.Description;
         org.NvdApiKey = request.NvdApiKey;
         org.IsAiEnabled = request.IsAiEnabled;
+        org.AiChunkSize = request.AiChunkSize > 0 ? request.AiChunkSize : 50;
+        org.AiMaxCvesPerAsset = request.AiMaxCvesPerAsset > 0 ? request.AiMaxCvesPerAsset : null;
+        org.AiMinScore = request.AiMinScore >= 0 ? request.AiMinScore : 0;
 
         await _db.SaveChangesAsync();
         return NoContent();
@@ -220,6 +232,9 @@ public class OrganizationsController : TenantControllerBase
             Description = org.Description,
             IsActive = org.IsActive,
             IsAiEnabled = org.IsAiEnabled,
+            AiChunkSize = org.AiChunkSize,
+            AiMaxCvesPerAsset = org.AiMaxCvesPerAsset,
+            AiMinScore = org.AiMinScore,
             CreatedAt = org.CreatedAt
         });
     }

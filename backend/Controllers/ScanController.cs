@@ -17,16 +17,19 @@ namespace backend.Controllers;
 public class ScanController : TenantControllerBase
 {
     private readonly ICveMappingService _cveMapping;
+    private readonly IScanJobCancellationService _cancellationService;
     private readonly ILogger<ScanController> _logger;
 
     public ScanController(
         AppDbContext db,
         UserManager<AppUser> userManager,
         ICveMappingService cveMapping,
+        IScanJobCancellationService cancellationService,
         ILogger<ScanController> logger)
         : base(db, userManager)
     {
         _cveMapping = cveMapping;
+        _cancellationService = cancellationService;
         _logger = logger;
     }
 
@@ -224,8 +227,14 @@ public class ScanController : TenantControllerBase
 
         if (job == null) return NotFound();
 
-        if (job.Status != ScanJobStatus.Queued)
-            return BadRequest(new { message = "Only queued jobs can be cancelled" });
+        if (job.Status == ScanJobStatus.Completed || job.Status == ScanJobStatus.Failed || job.Status == ScanJobStatus.Cancelled)
+            return BadRequest(new { message = "Job is already in a terminal state" });
+
+        if (job.Status == ScanJobStatus.Running)
+        {
+            var cancelled = _cancellationService.CancelJob(id);
+            return Ok(new { jobId = job.Id, status = cancelled ? "Cancelling" : "Cancelled" });
+        }
 
         job.Status = ScanJobStatus.Cancelled;
         job.CompletedAt = DateTime.UtcNow;

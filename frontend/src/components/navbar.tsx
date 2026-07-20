@@ -19,11 +19,7 @@ const navLinks = [
   { href: "/vulnerabilities", label: "CVEs" },
   { href: "/cve-mapping", label: "Scan" },
   { href: "/scan-lab", label: "Scan Lab" },
-  { href: "/settings/scan-schedules", label: "Schedules" },
-  { href: "/settings/members", label: "Members" },
-  { href: "/settings/departments", label: "Departments" },
-  { href: "/settings/asset-types", label: "Asset Types" },
-  { href: "/settings/audit-logs", label: "Audit Logs" },
+  { href: "/settings", label: "Settings" },
   { href: "/health", label: "Health" },
   { href: "/dev-tools", label: "Dev Tools" },
 ];
