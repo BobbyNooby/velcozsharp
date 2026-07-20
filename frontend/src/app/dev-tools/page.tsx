@@ -124,6 +124,19 @@ export default function DevToolsPage() {
     } catch {}
   };
 
+  const createTestNotification = async () => {
+    try {
+      const res = await apiFetch("/notifications/test", { method: "POST" });
+      if (res.ok && mountedRef.current) {
+        setMessage("Test notification created");
+      } else {
+        setMessage("Failed to create test notification");
+      }
+    } catch {
+      if (mountedRef.current) setMessage("Failed to create test notification");
+    }
+  };
+
   const sendRawRequest = async () => {
     setRawResponse("Loading...");
     try {
@@ -284,6 +297,26 @@ export default function DevToolsPage() {
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Notifications Test Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Notifications</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={createTestNotification} variant="outline">
+              Create Test Notification
+            </Button>
+            <Button onClick={() => apiFetch("/notifications/mark-all-read", { method: "POST" })} variant="outline">
+              Mark All Read
+            </Button>
+          </div>
+          <p className="text-sm text-gray-500">
+            The bell icon in the navbar polls every 5 seconds. Click "Create Test Notification" and watch the badge update.
+          </p>
         </CardContent>
       </Card>
 

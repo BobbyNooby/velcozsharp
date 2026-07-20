@@ -4,6 +4,8 @@ import "./globals.css";
 import Navbar from "@/components/navbar";
 import { OrgProvider } from "@/lib/api";
 import { JobProvider } from "@/lib/jobs";
+import { ToastProvider } from "@/lib/toast";
+import { SignalRProvider } from "@/lib/signalr";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,10 +34,14 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <OrgProvider>
-          <JobProvider>
-            <Navbar />
-            <main className="flex-1">{children}</main>
-          </JobProvider>
+          <ToastProvider>
+            <SignalRProvider>
+              <JobProvider>
+                <Navbar />
+                <main className="flex-1">{children}</main>
+              </JobProvider>
+            </SignalRProvider>
+          </ToastProvider>
         </OrgProvider>
       </body>
     </html>
