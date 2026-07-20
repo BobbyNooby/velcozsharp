@@ -1,7 +1,7 @@
 # VelcozSharp Architecture
 
 > Project overview and technical architecture for contributors and AI agents.
-> Last updated: 2026-07-10 (planning docs in `planning/` — local only, not committed)
+> Last updated: 2026-07-13 (OpenRouter AI integration added; SignalR real-time notifications; planning docs in `planning/` — local only, not committed)
 
 ---
 
@@ -23,11 +23,12 @@ VelcozSharp is a multi-tenant asset and vulnerability management system. A singl
 
 | Layer | Technology |
 |-------|------------|
-| Backend | C# 10, ASP.NET Core, EF Core, PostgreSQL |
+| Backend | C# 10, ASP.NET Core, EF Core, PostgreSQL, SignalR |
 | Auth | ASP.NET Core Identity (cookie-based) |
-| Frontend | Next.js 16, React 19, Tailwind CSS v4, shadcn/ui |
+| Frontend | Next.js 16, React 19, Tailwind CSS v4, shadcn/ui, @microsoft/signalr |
 | Database | PostgreSQL with JSONB for dynamic asset properties |
-| External API | NVD API v2 (CVE data) |
+| External APIs | NVD API v2 (CVE data), OpenRouter (AI) |
+| AI / LLM | OpenRouter API — relevance scoring + mitigation suggestions |
 | Hosting | Local dev: `dotnet run` + `npm run dev` |
 
 ---
@@ -40,8 +41,9 @@ VelcozSharp is a multi-tenant asset and vulnerability management system. A singl
 backend/
   Controllers/        API endpoints (one per domain)
   Data/               AppDbContext, migrations
+  Hubs/               SignalR hubs for real-time notifications
   Models/             Entities, Enums, DTOs
-  Services/           Business logic (scanning, validation, audit)
+  Services/           Business logic (scanning, validation, audit, notifications)
   Program.cs          DI registration, middleware pipeline
 ```
 
@@ -66,6 +68,7 @@ backend/
 | `DashboardController` | Aggregate stats for homepage |
 | `SeedController` | Demo data seeder |
 | `ScanScheduleController` | CRUD for recurring scan schedules |
+| `NotificationsController` | In-app notifications: list, mark read, test |
 | `AuditLogsController` | Read audit trail |
 
 ### Key Services
@@ -75,9 +78,12 @@ backend/
 | `BackgroundScanWorker` | `IHostedService` that processes queued `ScanJob` records |
 | `RegexCveMappingService` | Extracts keywords from asset properties, queries NVD, filters results by regex relevance |
 | `NvdApiService` | HTTP client for NVD API with rate limiting |
+| `OpenRouterService` | Server-side OpenRouter client for CVE relevance scoring and mitigation suggestions |
 | `AuditLogService` | Writes `AuditLog` records for mutations |
 | `AssetValidationService` | Validates asset properties against asset type schema |
 | `AssetTypeTemplateService` | Seeds built-in asset type templates per org |
+| `NotificationService` | Creates notifications and broadcasts via SignalR |
+| `NotificationHub` | SignalR hub; clients join org groups to receive push notifications |
 
 ---
 
@@ -111,6 +117,7 @@ Vulnerability
   ├── Description
   ├── CvssScore
   ├── Severity
+  ├── AiSuggestedMitigation (nullable)
   └── AssetVulnerabilities
 
 AssetVulnerability
@@ -118,7 +125,8 @@ AssetVulnerability
   ├── VulnerabilityId
   ├── Status (Active/Acknowledged/False Positive/Mitigated)
   ├── DetectedAt
-  └── MatchedKeyword
+  ├── MatchedKeyword
+  └── AiRelevanceScore (nullable, 0–100)
 
 ScanJob
   ├── OrganizationId
@@ -129,6 +137,16 @@ ScanJob
   ├── ProcessedAssets
   ├── CurrentAssetName
   └── NewVulnerabilitiesFound
+
+Notification
+  ├── OrganizationId
+  ├── UserId (null = org-wide)
+  ├── Type (CriticalVulnerabilityFound, ScanCompleted, ScanFailed, ScheduleFailed)
+  ├── Title
+  ├── Message
+  ├── Link
+  ├── IsRead
+  └── CreatedAt
 
 RecurringScanConfig
   ├── OrganizationId
@@ -181,11 +199,20 @@ AuditLog
    - `RegexCveMappingService` extracts keywords, calls NVD API, filters by regex, saves matches.
    - Increments `ProcessedAssets`.
 4. Marks job `Completed` or `Failed` and stores total CVEs found.
+5. `NotificationService` creates a notification and broadcasts it to the org's SignalR group.
+
+### Real-Time Notifications
+
+- Frontend opens a SignalR connection to `/hubs/notifications` after login.
+- Connection joins the current org group (`JoinOrganization`).
+- Server pushes `NewNotification` messages for scan completion, failures, and critical CVEs.
+- `ToastProvider` displays a toast; the bell and `/notifications` page refresh via a custom event.
 
 ### Frontend Polling
 
 - `JobContext` polls `GET /api/scan/jobs` every 3 seconds when jobs are active, otherwise every 10 seconds.
 - Dashboard and `/cve-mapping` use `useJobs()` to show live scan status.
+- Notification bell falls back to polling every 30 seconds if the SignalR connection is not active.
 
 ---
 
@@ -197,9 +224,12 @@ AuditLog
 frontend/src/
   app/                Next.js app router pages
   components/ui/      shadcn/ui components
+  components/         Custom components (navbar, notification-bell)
   lib/
     api.tsx           OrgContext, useApiFetch, useAuthSession, useDebounce
     jobs.tsx          JobContext, useJobs
+    signalr.tsx       SignalR connection, real-time notification handler
+    toast.tsx         Toast context + container
     utils.ts          cn() helper
 ```
 
@@ -207,6 +237,8 @@ frontend/src/
 
 - **Org state:** `OrgContext` stores current org ID and org list. Replaces the earlier localStorage hack.
 - **Job state:** `JobContext` polls scan jobs globally so any page can show progress.
+- **Toast state:** `ToastProvider` displays ephemeral toast notifications.
+- **Real-time state:** `SignalRProvider` manages the WebSocket connection and dispatches notifications.
 - **Page state:** Each page uses local `useState` for its own data.
 
 ### API Calls
@@ -286,6 +318,18 @@ The same CVE (e.g., CVE-2024-XXXX) can affect many assets. Storing it once saves
 - `GET /api/dashboard/stats`
 - `GET /api/audit-logs`
 
+### Notifications
+- `GET /api/notifications` — paginated list (unread first)
+- `GET /api/notifications/unread-count`
+- `PATCH /api/notifications/{id}/read`
+- `POST /api/notifications/mark-all-read`
+- `POST /api/notifications/test`
+
+### Real-Time
+- SignalR hub at `/hubs/notifications`
+- `JoinOrganization(string organizationId)` / `LeaveOrganization(string organizationId)`
+- Server event: `NewNotification`
+
 ### Scan Schedules
 - `GET/POST /api/scan-schedules`
 - `GET /api/scan-schedules/{id}`
@@ -316,18 +360,70 @@ npx kill-port 3000
 
 ---
 
-## Out of Scope (For Now)
+## OpenRouter / AI Integration
 
-- AI-enhanced CVE filtering (`Organization.IsAiEnabled` exists but unused)
-- Risk scoring formula (raw CVSS + severity + count is sufficient)
-- Advanced RBAC beyond Admin/Member
-- Multi-instance scaling
-- CISA KEV / EPSS enrichment
-- SMS notifications
-- CSV Export (scheduled)
-- Asset Tags & Criticality (scheduled)
-- Org Settings & User Preferences (scheduled)
+> **Status: Designed but NOT yet implemented.** This is the #1 post-MVP feature.
+> The architecture below describes the intended design. The service files, DB fields, and UI badges do not exist yet.
 
-## Future Improvements
+VelcozSharp will use the **OpenRouter API** from the backend to enhance vulnerability triage. AI calls are server-side only; the API key never reaches the frontend.
 
-Small enhancements and polish items for each feature are tracked in [`planning/FUTURE-IMPROVEMENTS.md`](./planning/FUTURE-IMPROVEMENTS.md) (local only, not committed). Noted during initial development and deferred to keep iteration speed high.
+### Use Cases
+
+1. **CVE Relevance Scoring**
+   - After `RegexCveMappingService` returns candidate CVEs from NVD, `OpenRouterService` scores each candidate 0–100 for relevance to the specific asset.
+   - The score is stored on `AssetVulnerability.AiRelevanceScore`.
+   - The UI defaults to showing matches above a configurable threshold, reducing false positives from keyword-only search.
+
+2. **Mitigation Suggestions**
+   - For linked CVEs, `OpenRouterService` suggests patch, upgrade, or workaround steps.
+   - Suggestions are stored on `Vulnerability.AiSuggestedMitigation`.
+   - The UI labels them as **"AI Suggested (unverified)"** and requires a human to confirm any status change to `Mitigated`.
+
+### Safety Guardrails
+
+- AI never creates or deletes vulnerability records.
+- AI never changes `AssetVulnerability.Status` directly.
+- All AI suggestions are logged in the audit trail alongside the human decision.
+- The `Organization.IsAiEnabled` flag controls whether AI features are active per organization.
+
+### Configuration
+
+- **Development:** OpenRouter API key stored in `backend/appsettings.Development.json` or user secrets (`dotnet user-secrets`).
+- **Production:** Key injected via environment variable or Azure Key Vault.
+
+### Service Placement
+
+- `OpenRouterService` will live in `backend/Services/` and be called by `RegexCveMappingService` and `AssetsController`.
+- Prompts will be version-controlled in `backend/Services/Ai/Prompts/`.
+
+---
+
+## Out of Scope (Post-MVP — Skip These)
+
+The following are explicitly **not planned** for VelcozSharp. They add complexity with low portfolio ROI for a student learning project.
+
+| Feature | Why Skipped |
+|---------|-------------|
+| Database cleanup / TTL / auto-purge | Security app — all data retained for audit trail integrity |
+| SMS notifications | Overkill for portfolio |
+| Mobile push notifications | Way out of scope |
+| Advanced RBAC beyond Admin/SecurityAnalyst/Viewer | 3 roles sufficient for MVP |
+| Multi-instance scaling / K8s / Terraform | Not running production scale |
+| Table partitioning / pg_cron / DB-level archiving | Unnecessary without millions of rows |
+| Dashboard widgets / customization | Polishing, not differentiating |
+| Org Settings & User Preferences | Polishing, not differentiating |
+
+## Post-MVP Overengineering Roadmap
+
+The following are **designed but not yet built**. These are the "impressive but not essential" features that turn VelcozSharp into a portfolio centerpiece. Build them slowly, one at a time, after MVP is complete.
+
+| Priority | Feature | What It Demonstrates |
+|----------|---------|---------------------|
+| **#1** | **OpenRouter AI Integration** — CVE relevance scoring + mitigation suggestions | AI integration, prompt engineering |
+| **#2** | **Charts & Data Viz Dashboard** — Recharts/Tremor donut, bar, line charts | Polished UX, data visualization |
+| **#3** | **CI/CD + Containerization + Cloud Deploy** — Dockerfile, GitHub Actions, Render/Azure | DevOps maturity, production deployment |
+| **#4** | **CISA KEV + EPSS Enrichment** — actively exploited CVEs + exploit probability | Deep security domain expertise |
+| **#5** | **API Tokens + Webhook Integrations** — scoped keys, outgoing webhooks with retry | Platform thinking, SaaS architecture |
+| **#6** | **Redis Caching Layer** — dashboard stats, NVD results, asset pages | Performance engineering, distributed systems |
+
+Full details, effort estimates, and implementation notes for each are tracked in [`planning/FUTURE-IMPROVEMENTS.md`](./planning/FUTURE-IMPROVEMENTS.md) (local only, not committed).
