@@ -88,7 +88,9 @@ public class VulnerabilitiesController : TenantControllerBase
                 PublishedDate = av.Vulnerability.PublishedDate,
                 DetectedAt = av.DetectedAt,
                 Status = av.Status,
-                MatchedKeyword = av.MatchedKeyword
+                MatchedKeyword = av.MatchedKeyword,
+                AiRelevanceScore = av.AiRelevanceScore,
+                AiSuggestedMitigation = av.Vulnerability.AiSuggestedMitigation
             })
             .ToPagedResultAsync(page, pageSize);
 

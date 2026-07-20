@@ -209,7 +209,9 @@ public class AssetsController : TenantControllerBase
                     PublishedDate = av.Vulnerability.PublishedDate,
                     DetectedAt = av.DetectedAt,
                     Status = av.Status,
-                    MatchedKeyword = av.MatchedKeyword
+                    MatchedKeyword = av.MatchedKeyword,
+                    AiRelevanceScore = av.AiRelevanceScore,
+                    AiSuggestedMitigation = av.Vulnerability.AiSuggestedMitigation
                 }).ToList(),
                 CreatedAt = a.CreatedAt,
                 UpdatedAt = a.UpdatedAt

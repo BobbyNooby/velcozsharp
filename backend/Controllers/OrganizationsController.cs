@@ -71,6 +71,7 @@ public class OrganizationsController : TenantControllerBase
                 Name = o.Name,
                 Description = o.Description,
                 IsActive = o.IsActive,
+                IsAiEnabled = o.IsAiEnabled,
                 CreatedAt = o.CreatedAt
             })
             .ToPagedResultAsync(page, pageSize);
@@ -97,6 +98,7 @@ public class OrganizationsController : TenantControllerBase
                 Name = o.Name,
                 Description = o.Description,
                 IsActive = o.IsActive,
+                IsAiEnabled = o.IsAiEnabled,
                 CreatedAt = o.CreatedAt
             })
             .FirstOrDefaultAsync();
@@ -118,6 +120,7 @@ public class OrganizationsController : TenantControllerBase
             Name = request.Name,
             Description = request.Description,
             NvdApiKey = request.NvdApiKey,
+            IsAiEnabled = request.IsAiEnabled,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -146,6 +149,7 @@ public class OrganizationsController : TenantControllerBase
             Name = org.Name,
             Description = org.Description,
             IsActive = org.IsActive,
+            IsAiEnabled = org.IsAiEnabled,
             CreatedAt = org.CreatedAt
         });
     }
@@ -165,6 +169,7 @@ public class OrganizationsController : TenantControllerBase
         org.Name = request.Name;
         org.Description = request.Description;
         org.NvdApiKey = request.NvdApiKey;
+        org.IsAiEnabled = request.IsAiEnabled;
 
         await _db.SaveChangesAsync();
         return NoContent();
@@ -214,6 +219,7 @@ public class OrganizationsController : TenantControllerBase
             Name = org.Name,
             Description = org.Description,
             IsActive = org.IsActive,
+            IsAiEnabled = org.IsAiEnabled,
             CreatedAt = org.CreatedAt
         });
     }

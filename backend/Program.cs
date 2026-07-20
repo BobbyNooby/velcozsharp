@@ -99,6 +99,9 @@ builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddSignalR();
 
+// AI / OpenRouter
+builder.Services.AddHttpClient<IOpenRouterService, OpenRouterService>();
+
 // Background worker for async scan jobs
 builder.Services.AddHostedService<BackgroundScanWorker>();
 
