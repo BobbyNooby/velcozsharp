@@ -44,6 +44,9 @@ export default function DashboardPage() {
   const mountedRef = useRef(true);
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [departmentBreakdown, setDepartmentBreakdown] = useState<Record<string, number>>({});
+  const [assetTypeBreakdown, setAssetTypeBreakdown] = useState<Record<string, number>>({});
+  const [jobSummary, setJobSummary] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -59,13 +62,18 @@ export default function DashboardPage() {
     const controller = new AbortController();
     setLoading(true);
 
-    apiFetch("/dashboard/stats", { signal: controller.signal })
-      .then(async (res) => {
+    Promise.all([
+      apiFetch("/dashboard/stats", { signal: controller.signal }),
+      apiFetch("/dashboard/department-breakdown", { signal: controller.signal }),
+      apiFetch("/dashboard/asset-type-breakdown", { signal: controller.signal }),
+      apiFetch("/scan/jobs/summary", { signal: controller.signal }),
+    ])
+      .then(async ([statsRes, deptRes, typeRes, jobsRes]) => {
         if (!mountedRef.current) return;
-        if (res.ok) {
-          const data = await res.json();
-          setStats(data);
-        }
+        if (statsRes.ok) setStats(await statsRes.json());
+        if (deptRes.ok) setDepartmentBreakdown(await deptRes.json());
+        if (typeRes.ok) setAssetTypeBreakdown(await typeRes.json());
+        if (jobsRes.ok) setJobSummary(await jobsRes.json());
       })
       .catch(() => {})
       .finally(() => {
@@ -92,11 +100,18 @@ export default function DashboardPage() {
   // Refresh dashboard stats when active jobs complete
   useEffect(() => {
     if (activeJobs.length === 0) {
-      apiFetch("/dashboard/stats").then(async (res) => {
-        if (res.ok && mountedRef.current) {
-          setStats(await res.json());
-          setMessage("");
-        }
+      Promise.all([
+        apiFetch("/dashboard/stats"),
+        apiFetch("/dashboard/department-breakdown"),
+        apiFetch("/dashboard/asset-type-breakdown"),
+        apiFetch("/scan/jobs/summary"),
+      ]).then(async ([statsRes, deptRes, typeRes, jobsRes]) => {
+        if (!mountedRef.current) return;
+        if (statsRes.ok) setStats(await statsRes.json());
+        if (deptRes.ok) setDepartmentBreakdown(await deptRes.json());
+        if (typeRes.ok) setAssetTypeBreakdown(await typeRes.json());
+        if (jobsRes.ok) setJobSummary(await jobsRes.json());
+        setMessage("");
       });
     }
   }, [activeJobs.length, apiFetch]);
@@ -173,17 +188,64 @@ export default function DashboardPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Severity Breakdown</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Scan Jobs</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-1 text-xs">
+              {Object.entries(jobSummary).sort().map(([status, count]) => (
+                <Badge key={status} variant="outline">{status}: {count}</Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Severity Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-1">
-              {severityEntries.length === 0 && (
-                <span className="text-sm text-gray-400">None</span>
-              )}
+              {severityEntries.length === 0 && <span className="text-sm text-gray-400">None</span>}
               {severityEntries.map(([severity, count]) => (
                 <Badge key={severity} className={severityColors[severity] ?? "bg-gray-100 text-gray-700"}>
                   {severity}: {count}
                 </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Assets by Department</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1">
+              {Object.entries(departmentBreakdown).length === 0 && <span className="text-sm text-gray-400">None</span>}
+              {Object.entries(departmentBreakdown).map(([dept, count]) => (
+                <div key={dept} className="flex justify-between text-sm">
+                  <span>{dept}</span>
+                  <span className="font-medium">{count}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Assets by Type</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1">
+              {Object.entries(assetTypeBreakdown).length === 0 && <span className="text-sm text-gray-400">None</span>}
+              {Object.entries(assetTypeBreakdown).map(([type, count]) => (
+                <div key={type} className="flex justify-between text-sm">
+                  <span>{type}</span>
+                  <span className="font-medium">{count}</span>
+                </div>
               ))}
             </div>
           </CardContent>

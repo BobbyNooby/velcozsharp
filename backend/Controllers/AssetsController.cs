@@ -126,6 +126,49 @@ public class AssetsController : TenantControllerBase
         return Ok(result);
     }
 
+    [HttpGet("count")]
+    public async Task<IActionResult> GetCount(
+        [FromQuery] Guid? departmentId,
+        [FromQuery] Guid? assetTypeId,
+        [FromQuery] AssetStatus? status,
+        [FromQuery] string? severity,
+        [FromQuery] string? criticality,
+        [FromQuery] string? tag,
+        [FromQuery] string? search,
+        [FromQuery] bool? hasVulnerabilities)
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var query = _db.Assets
+            .Where(a => a.Status != AssetStatus.Decommissioned)
+            .AsQueryable();
+
+        if (departmentId.HasValue) query = query.Where(a => a.DepartmentId == departmentId.Value);
+        if (assetTypeId.HasValue) query = query.Where(a => a.AssetTypeId == assetTypeId.Value);
+        if (status.HasValue) query = query.Where(a => a.Status == status.Value);
+        if (!string.IsNullOrWhiteSpace(severity)) query = query.Where(a => a.HighestSeverity == severity);
+        if (!string.IsNullOrWhiteSpace(criticality) && Enum.TryParse<AssetCriticality>(criticality, true, out var crit))
+            query = query.Where(a => a.Criticality == crit);
+        if (!string.IsNullOrWhiteSpace(tag))
+        {
+            var tagName = tag.Trim().ToLower();
+            query = query.Where(a => a.Tags != null && a.Tags.Any(t => t == tagName));
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(a => a.Name.ToLower().Contains(term));
+        }
+        if (hasVulnerabilities.HasValue)
+            query = hasVulnerabilities.Value
+                ? query.Where(a => a.Vulnerabilities.Any())
+                : query.Where(a => !a.Vulnerabilities.Any());
+
+        var count = await query.CountAsync();
+        return Ok(new { count });
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {

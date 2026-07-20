@@ -30,6 +30,27 @@ public class ScanController : TenantControllerBase
         _logger = logger;
     }
 
+    [HttpGet("jobs/summary")]
+    public async Task<IActionResult> GetJobSummary()
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var summary = await _db.ScanJobs
+            .Where(j => j.OrganizationId == orgId.Value)
+            .GroupBy(j => j.Status)
+            .Select(g => new { Status = g.Key.ToString(), Count = g.Count() })
+            .ToDictionaryAsync(x => x.Status, x => x.Count);
+
+        foreach (var status in Enum.GetNames<ScanJobStatus>())
+        {
+            if (!summary.ContainsKey(status))
+                summary[status] = 0;
+        }
+
+        return Ok(summary);
+    }
+
     [HttpPost("assets/{assetId:guid}")]
     public async Task<IActionResult> ScanAsset(Guid assetId)
     {

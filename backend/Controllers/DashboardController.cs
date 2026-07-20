@@ -85,4 +85,53 @@ public class DashboardController : TenantControllerBase
             RecentScanActivity = recentScanActivity
         });
     }
+
+    [HttpGet("severity-breakdown")]
+    public async Task<IActionResult> GetSeverityBreakdown()
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var breakdown = await _db.AssetVulnerabilities
+            .Where(av => av.OrganizationId == orgId.Value)
+            .Include(av => av.Vulnerability)
+            .Where(av => av.Vulnerability.Severity != null)
+            .GroupBy(av => av.Vulnerability.Severity!)
+            .Select(g => new { Severity = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Severity, x => x.Count);
+
+        return Ok(breakdown);
+    }
+
+    [HttpGet("department-breakdown")]
+    public async Task<IActionResult> GetDepartmentBreakdown()
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var breakdown = await _db.Assets
+            .Where(a => a.OrganizationId == orgId.Value && a.Status != AssetStatus.Decommissioned)
+            .Include(a => a.Department)
+            .GroupBy(a => a.Department.Name)
+            .Select(g => new { Department = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Department, x => x.Count);
+
+        return Ok(breakdown);
+    }
+
+    [HttpGet("asset-type-breakdown")]
+    public async Task<IActionResult> GetAssetTypeBreakdown()
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var breakdown = await _db.Assets
+            .Where(a => a.OrganizationId == orgId.Value && a.Status != AssetStatus.Decommissioned)
+            .Include(a => a.AssetType)
+            .GroupBy(a => a.AssetType.Name)
+            .Select(g => new { AssetType = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.AssetType, x => x.Count);
+
+        return Ok(breakdown);
+    }
 }

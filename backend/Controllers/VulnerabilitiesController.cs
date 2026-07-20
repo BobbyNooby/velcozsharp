@@ -95,6 +95,35 @@ public class VulnerabilitiesController : TenantControllerBase
         return Ok(result);
     }
 
+    [HttpGet("count")]
+    public async Task<IActionResult> GetCount(
+        [FromQuery] string? search,
+        [FromQuery] string? severity,
+        [FromQuery] string? status,
+        [FromQuery] Guid? assetTypeId)
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var query = _db.AssetVulnerabilities
+            .Where(av => av.OrganizationId == orgId.Value)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(severity)) query = query.Where(av => av.Vulnerability.Severity == severity);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(av => av.Status == status);
+        if (assetTypeId.HasValue) query = query.Where(av => av.Asset.AssetTypeId == assetTypeId.Value);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(av =>
+                av.Vulnerability.CveId.ToLower().Contains(term) ||
+                (av.Vulnerability.Description != null && av.Vulnerability.Description.ToLower().Contains(term)));
+        }
+
+        var count = await query.CountAsync();
+        return Ok(new { count });
+    }
+
     [HttpPatch("bulk-status")]
     public async Task<IActionResult> BulkUpdateStatus([FromBody] BulkUpdateVulnerabilityStatusRequest request)
     {
