@@ -365,6 +365,9 @@ namespace backend.Data.Migrations
                     b.Property<Guid>("VulnerabilityId")
                         .HasColumnType("uuid");
 
+                    b.Property<double?>("AiRelevanceScore")
+                        .HasColumnType("double precision");
+
                     b.Property<DateTime>("DetectedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -653,6 +656,9 @@ namespace backend.Data.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<string>("AiSuggestedMitigation")
+                        .HasColumnType("text");
 
                     b.Property<string>("CveId")
                         .IsRequired()

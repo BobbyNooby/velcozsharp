@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useOrg, useApiFetch } from "@/lib/api";
 import { useJobs } from "@/lib/jobs";
 import { Button } from "@/components/ui/button";
@@ -316,6 +317,23 @@ export default function DevToolsPage() {
           </div>
           <p className="text-sm text-gray-500">
             The bell icon in the navbar polls every 5 seconds. Click "Create Test Notification" and watch the badge update.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* AI Chat Test Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>AI / OpenRouter</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Link href="/ai-chat" className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2">
+              Open AI Chat Demo
+            </Link>
+          </div>
+          <p className="text-sm text-gray-500">
+            Test the OpenRouter connection with the DeepSeek Chat free model. Requires <code>OpenRouter:ApiKey</code> in backend appsettings.
           </p>
         </CardContent>
       </Card>
