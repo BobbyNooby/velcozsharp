@@ -7,12 +7,13 @@ Return ONLY a JSON object (no markdown, no code blocks) with this exact structur
 
 Rules:
 - SCORE 0 = completely unrelated (asset does not run the affected product/version)
-- SCORE 1-100 = relevant (higher = more critical/severe)
+- SCORE 1-100 = confidence this CVE applies to this specific asset based on version matching (100 = definitely affected). Ignore the CVSS base score/severity — that is already in the CVE data.
+- Compare the asset's version against the "Affects:" field. If the asset version is outside the affected range, score 0 regardless of how high the CVSS is.
 - Include every asset-CVE combination shown above, even if SCORE is 0.
 - Each asset MUST appear exactly once. Do not repeat any asset line.
 - Each line format: ASSET_ID:<guid>|CVE:<cveId>|SCORE:<score>|REASON:<reason>|MITIGATION:<mitigation>
 - Use the ASSET_ID from the asset header, NOT the asset name.
-- REASON: 1 sentence explaining why it does or does not apply to THIS asset.
+- REASON: 1 sentence explaining why it does or does not apply to THIS asset, citing the version comparison where possible.
 - MITIGATION: empty if score is 0, otherwise specific patch/upgrade action.
 - Do not hallucinate CVEs. Do not recommend actions outside standard vulnerability management.
 - Do not include markdown, code blocks, or text outside the JSON object.
