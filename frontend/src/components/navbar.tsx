@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useOrg, useAuthSession } from "@/lib/api";
+import NotificationBell from "@/components/notification-bell";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -18,6 +19,8 @@ const navLinks = [
   { href: "/vulnerabilities", label: "CVEs" },
   { href: "/cve-mapping", label: "Scan" },
   { href: "/settings/scan-schedules", label: "Schedules" },
+  { href: "/settings/members", label: "Members" },
+  { href: "/health", label: "Health" },
   { href: "/dev-tools", label: "Dev Tools" },
 ];
 
@@ -54,6 +57,7 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-3">
+          <NotificationBell />
           {orgs.length > 0 && (
             <Select value={orgId || " "} onValueChange={(v) => v && v !== " " && setOrgId(v)}>
               <SelectTrigger className="w-[180px] h-8 text-xs">

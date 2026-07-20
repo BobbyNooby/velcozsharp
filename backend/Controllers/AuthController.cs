@@ -1,6 +1,8 @@
 using backend.Data;
 using backend.Models.Dtos;
 using backend.Models.Entities;
+using backend.Models.Enums;
+using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -15,12 +17,79 @@ public class AuthController : ControllerBase
     private readonly AppDbContext _db;
     private readonly UserManager<AppUser> _userManager;
     private readonly SignInManager<AppUser> _signInManager;
+    private readonly IAssetTypeTemplateService _templateService;
 
-    public AuthController(AppDbContext db, UserManager<AppUser> userManager, SignInManager<AppUser> signInManager)
+    public AuthController(AppDbContext db, UserManager<AppUser> userManager, SignInManager<AppUser> signInManager, IAssetTypeTemplateService templateService)
     {
         _db = db;
         _userManager = userManager;
         _signInManager = signInManager;
+        _templateService = templateService;
+    }
+
+    [HttpPost("register")]
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+            return BadRequest(new { message = "Email and password are required" });
+
+        var existingUser = await _userManager.FindByEmailAsync(request.Email);
+        if (existingUser != null)
+            return BadRequest(new { message = "An account with this email already exists" });
+
+        var displayName = string.IsNullOrWhiteSpace(request.DisplayName)
+            ? request.Email.Split('@')[0]
+            : request.DisplayName;
+
+        var user = new AppUser
+        {
+            Id = Guid.NewGuid(),
+            UserName = request.Email,
+            Email = request.Email,
+            DisplayName = displayName,
+            EmailConfirmed = true
+        };
+
+        var createResult = await _userManager.CreateAsync(user, request.Password);
+        if (!createResult.Succeeded)
+            return BadRequest(new { message = string.Join(", ", createResult.Errors.Select(e => e.Description)) });
+
+        await _userManager.AddToRoleAsync(user, RoleNames.Admin);
+
+        // Create a personal organization for the new user
+        var org = new Organization
+        {
+            Id = Guid.NewGuid(),
+            Name = $"{displayName}'s Organization",
+            Description = "",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.Organizations.Add(org);
+
+        _db.UserOrganizations.Add(new UserOrganization
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            OrganizationId = org.Id,
+            Role = RoleNames.Admin,
+            IsDefault = true
+        });
+
+        await _db.SaveChangesAsync();
+        await _templateService.SeedBuiltInTypesAsync(org.Id);
+
+        await _signInManager.SignInAsync(user, isPersistent: true);
+
+        return Ok(new
+        {
+            userId = user.Id,
+            email = user.Email,
+            displayName = user.DisplayName,
+            role = RoleNames.Admin,
+            organizationId = org.Id,
+            organizationName = org.Name
+        });
     }
 
     [HttpPost("login")]
