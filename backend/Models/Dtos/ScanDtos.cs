@@ -13,6 +13,7 @@ public class ScanJobResponse
     public int TotalAssets { get; set; }
     public int ProcessedAssets { get; set; }
     public int NewVulnerabilitiesFound { get; set; }
+    public bool UseAi { get; set; }
     public string? CurrentAssetName { get; set; }
     public string? ErrorMessage { get; set; }
     public DateTime CreatedAt { get; set; }

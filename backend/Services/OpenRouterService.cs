@@ -33,7 +33,7 @@ public class OpenRouterService : IOpenRouterService
         _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
         _httpClient.DefaultRequestHeaders.Add("HTTP-Referer", "https://github.com/velcozsharp");
         _httpClient.DefaultRequestHeaders.Add("X-Title", "VelcozSharp");
-        _httpClient.Timeout = TimeSpan.FromSeconds(180);
+        _httpClient.Timeout = TimeSpan.FromSeconds(300);
     }
 
     public async Task<string> ChatAsync(string userMessage, bool requireJson = false, CancellationToken ct = default)
@@ -119,66 +119,45 @@ Do NOT hallucinate CVEs. Do NOT recommend actions outside of standard vulnerabil
 
     public async Task<string> BulkSuggestKeywordsAsync(List<AiAssetSummary> assets, CancellationToken ct = default)
     {
-        var assetLines = string.Join("\n", assets.Select((a, i) =>
+        var prompt = AiPrompts.BuildKeywordSuggestionPrompt(assets);
+
+        try
         {
-            var props = string.Join(", ", a.Properties.Select(kv => $"{kv.Key}: {kv.Value}"));
-            return $"[ASSET_{i + 1:000}] {a.Name}: {props}";
-        }));
-
-        var prompt = "You are a cybersecurity analyst. Given these assets, suggest NVD API keywordSearch terms.\n" +
-            "NVD keywordSearch does AND matching: all terms must appear in a CVE for it to match.\n" +
-            "For each asset, suggest 2-4 specific but not overly narrow product/version keywords.\n" +
-            "Prefer exact product names with MAJOR.MINOR version only. If the asset version is 15.4.2, use \"postgresql 15\".\n" +
-            "If the asset version is 8.0.1, use \"java 8\" or just \"java\".\n" +
-            "Never include patch-level versions like \"15.4.2\" or \"8.0.1\" as a keyword.\n" +
-            "Avoid redundant duplicate terms.\n" +
-            "Return ONLY a JSON object (no markdown, no code blocks) with this exact structure:\n" +
-            "{\"results\":\"ASSET:<assetName>|KEYWORDS:<term1>,<term2>,<term3>\\nASSET:<assetName>|KEYWORDS:<term1>,<term2>\\n...\"}\n\n" +
-            "Assets:\n" + assetLines + "\n\n" +
-            "Rules:\n" +
-            "- One line per asset in the \"results\" string.\n" +
-            "- Each line format: ASSET:<name>|KEYWORDS:<comma-separated terms>\n" +
-            "- Do not include extra text outside the JSON object.";
-
-        var reply = await ChatAsync(prompt, requireJson: true, ct);
-        var truncated = reply.Length > 500 ? reply[..500] + "..." : reply;
-        _logger.LogInformation("AI keyword suggestion: {AssetCount} assets in -> {Chars} chars out. Raw: {Raw}", assets.Count, reply.Length, truncated);
-        return reply;
+            var reply = await ChatAsync(prompt, requireJson: true, ct);
+            var truncated = reply.Length > 500 ? reply[..500] + "..." : reply;
+            _logger.LogInformation("AI keyword suggestion: {AssetCount} assets in -> {Chars} chars out. Raw: {Raw}", assets.Count, reply.Length, truncated);
+            return reply;
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("AI keyword suggestion timed out for {AssetCount} assets; retrying once", assets.Count);
+            var retryReply = await ChatAsync(prompt, requireJson: true, ct);
+            var truncated = retryReply.Length > 500 ? retryReply[..500] + "..." : retryReply;
+            _logger.LogInformation("AI keyword suggestion retry: {AssetCount} assets in -> {Chars} chars out. Raw: {Raw}", assets.Count, retryReply.Length, truncated);
+            return retryReply;
+        }
     }
 
     public async Task<string> BulkScoreCvesAsync(List<AiAssetWithCves> assetsWithCves, CancellationToken ct = default)
     {
-        var sections = new List<string>();
-        var assetIndex = 1;
-        foreach (var awc in assetsWithCves)
-        {
-            var props = string.Join(", ", awc.Asset.Properties.Select(kv => $"{kv.Key}: {kv.Value}"));
-            var header = $"[ASSET_{assetIndex:000}] {awc.Asset.Name}: {props}";
-            var cveLines = string.Join("\n", awc.Cves.Select((c, i) =>
-                $"  [CVE_{i + 1:000}] {c.CveId}: CVSS {c.CvssScore} {c.Severity}. Affects: {c.AffectedInfo}. {c.Description}"));
-            sections.Add($"{header}\nCVEs found for this asset:\n{cveLines}");
-            assetIndex++;
-        }
-
-        var prompt = "You are a cybersecurity vulnerability analyst. For each asset below, assess ONLY the CVEs listed under that asset.\n" +
-            "Do not score a CVE for an asset unless the asset actually runs the affected product/version.\n" +
-            "Return ONLY a JSON object (no markdown, no code blocks) with this exact structure:\n" +
-            "{\"results\":\"ASSET:<assetName>|CVE:<cveId>|SCORE:<0-100>|REASON:<brief reason>|MITIGATION:<action or empty>\\n...\"}\n\n" +
-            string.Join("\n\n", sections) + "\n\n" +
-            "Rules:\n" +
-            "- SCORE 0 = completely unrelated (asset does not run the affected product/version)\n" +
-            "- SCORE 1-100 = relevant (higher = more critical/severe)\n" +
-            "- Include every asset-CVE combination shown above, even if SCORE is 0.\n" +
-            "- REASON: 1 sentence explaining why it does or does not apply to THIS asset.\n" +
-            "- MITIGATION: empty if score is 0, otherwise specific patch/upgrade action.\n" +
-            "- Do not hallucinate CVEs. Do not recommend actions outside standard vulnerability management.\n" +
-            "- Do not include markdown, code blocks, or text outside the JSON object.";
-
+        var prompt = AiPrompts.BuildCveScoringPrompt(assetsWithCves);
         var totalCves = assetsWithCves.Sum(a => a.Cves.Count);
-        var reply = await ChatAsync(prompt, requireJson: true, ct);
-        var truncated = reply.Length > 500 ? reply[..500] + "..." : reply;
-        _logger.LogInformation("AI bulk scoring: {AssetCount} assets x {CveCount} CVEs in -> {Chars} chars out. Raw: {Raw}", assetsWithCves.Count, totalCves, reply.Length, truncated);
-        return reply;
+
+        try
+        {
+            var reply = await ChatAsync(prompt, requireJson: true, ct);
+            var truncated = reply.Length > 500 ? reply[..500] + "..." : reply;
+            _logger.LogInformation("AI bulk scoring: {AssetCount} assets x {CveCount} CVEs in -> {Chars} chars out. Raw: {Raw}", assetsWithCves.Count, totalCves, reply.Length, truncated);
+            return reply;
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("AI bulk scoring timed out for {AssetCount} assets x {CveCount} CVEs; retrying once", assetsWithCves.Count, totalCves);
+            var retryReply = await ChatAsync(prompt, requireJson: true, ct);
+            var truncated = retryReply.Length > 500 ? retryReply[..500] + "..." : retryReply;
+            _logger.LogInformation("AI bulk scoring retry: {AssetCount} assets x {CveCount} CVEs in -> {Chars} chars out. Raw: {Raw}", assetsWithCves.Count, totalCves, retryReply.Length, truncated);
+            return retryReply;
+        }
     }
 
     private class OpenRouterChatRequest

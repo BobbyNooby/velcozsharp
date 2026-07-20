@@ -10,6 +10,7 @@ type ScanJob = {
   totalAssets: number;
   processedAssets: number;
   newVulnerabilitiesFound: number;
+  useAi: boolean;
   currentAssetName?: string;
   errorMessage?: string;
   createdAt: string;

@@ -5,7 +5,7 @@ namespace backend.Services;
 
 public interface INvdApiService
 {
-    Task<NvdSearchResult> SearchByKeywordsAsync(List<string> keywords, string? apiKey = null);
+    Task<NvdSearchResult> SearchByKeywordsAsync(List<string> keywords, string? apiKey = null, CancellationToken ct = default);
 }
 
 public class NvdApiService : INvdApiService
@@ -22,7 +22,7 @@ public class NvdApiService : INvdApiService
         _httpClient.Timeout = TimeSpan.FromSeconds(30);
     }
 
-    public async Task<NvdSearchResult> SearchByKeywordsAsync(List<string> keywords, string? apiKey = null)
+    public async Task<NvdSearchResult> SearchByKeywordsAsync(List<string> keywords, string? apiKey = null, CancellationToken ct = default)
     {
         var query = string.Join(" ", keywords);
         _logger.LogInformation("NVD search: {Query}", query);
@@ -35,7 +35,7 @@ public class NvdApiService : INvdApiService
             {
                 var delay = TimeSpan.FromSeconds(6) - elapsed;
                 _logger.LogInformation("Rate limit: waiting {DelayMs}ms", delay.TotalMilliseconds);
-                await Task.Delay(delay);
+                await Task.Delay(delay, ct);
             }
         }
 
@@ -48,25 +48,30 @@ public class NvdApiService : INvdApiService
         try
         {
             _lastRequestTime = DateTime.UtcNow;
-            var response = await _httpClient.GetAsync(url);
+            var response = await _httpClient.GetAsync(url, ct);
 
             if (response.StatusCode == HttpStatusCode.Forbidden || response.StatusCode == HttpStatusCode.TooManyRequests)
             {
                 _logger.LogWarning("NVD rate limited (status {Status}). Waiting 10s and retrying...", response.StatusCode);
-                await Task.Delay(TimeSpan.FromSeconds(10));
+                await Task.Delay(TimeSpan.FromSeconds(10), ct);
                 _lastRequestTime = DateTime.UtcNow;
-                response = await _httpClient.GetAsync(url);
+                response = await _httpClient.GetAsync(url, ct);
             }
 
             response.EnsureSuccessStatusCode();
 
-            var json = await response.Content.ReadAsStringAsync();
+            var json = await response.Content.ReadAsStringAsync(ct);
             var result = JsonSerializer.Deserialize<NvdSearchResult>(json, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             });
 
             return result ?? new NvdSearchResult();
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("NVD query cancelled for keywords: {Query}", query);
+            throw;
         }
         catch (Exception ex)
         {

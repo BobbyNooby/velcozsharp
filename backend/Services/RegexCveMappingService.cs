@@ -60,14 +60,14 @@ public class RegexCveMappingService : ICveMappingService
 
         // Query NVD
         var org = await _db.Organizations.FindAsync(organizationId);
-        var nvdResult = await _nvdApi.SearchByKeywordsAsync(keywords, org?.NvdApiKey);
+        var nvdResult = await _nvdApi.SearchByKeywordsAsync(keywords, org?.NvdApiKey, default);
 
         // If no results with all keywords, try with fewer (product + version only)
         if ((nvdResult.Vulnerabilities == null || nvdResult.Vulnerabilities.Count == 0) && keywords.Count > 2)
         {
             var reducedKeywords = keywords.Take(2).ToList();
             _logger.LogInformation("No results with all keywords, trying reduced: {Keywords}", string.Join(", ", reducedKeywords));
-            nvdResult = await _nvdApi.SearchByKeywordsAsync(reducedKeywords, org?.NvdApiKey);
+            nvdResult = await _nvdApi.SearchByKeywordsAsync(reducedKeywords, org?.NvdApiKey, default);
         }
 
         if (nvdResult.Vulnerabilities == null || nvdResult.Vulnerabilities.Count == 0)

@@ -52,11 +52,14 @@ public class AiCveMappingService : IAiCveMappingService
         var org = await _db.Organizations.FindAsync([organizationId], ct);
         var nvdApiKey = org?.NvdApiKey;
 
+        // Deduplicate asset IDs to avoid duplicate work and dictionary issues
+        var uniqueAssetIds = assetIds.Distinct().ToList();
+
         // Load all assets with their asset type fields
         var assets = await _db.Assets
             .Include(a => a.AssetType)
                 .ThenInclude(at => at!.Fields)
-            .Where(a => assetIds.Contains(a.Id) && a.OrganizationId == organizationId)
+            .Where(a => uniqueAssetIds.Contains(a.Id) && a.OrganizationId == organizationId)
             .OrderBy(a => a.Name)
             .ToListAsync(ct);
 
@@ -113,26 +116,46 @@ public class AiCveMappingService : IAiCveMappingService
             });
 
             // Query NVD for each asset in parallel, with fallback to broader keywords
-            var nvdTasks = keywordSuggestions.Select(async suggestion =>
+            var suggestionList = keywordSuggestions.ToList();
+            var nvdResults = new List<(Guid AssetId, NvdSearchResult Result)>();
+
+            for (var i = 0; i < suggestionList.Count; i++)
             {
+                var suggestion = suggestionList[i];
+                var asset = chunkAssets.FirstOrDefault(a => a.Id == suggestion.AssetId);
+                var assetName = asset?.Name ?? suggestion.AssetId.ToString()[..8];
+
+                progress?.Report(new AiBulkScanProgress
+                {
+                    TotalAssets = totalAssets,
+                    ProcessedAssets = processedAssets + i,
+                    CurrentChunk = chunkIndex + 1,
+                    TotalChunks = totalChunks,
+                    CurrentAssetName = assetName,
+                    Stage = $"Querying NVD ({i + 1}/{suggestionList.Count} assets)..."
+                });
+
                 if (suggestion.Keywords.Count == 0)
                 {
-                    return new { suggestion.AssetId, Result = new NvdSearchResult() };
+                    nvdResults.Add((suggestion.AssetId, new NvdSearchResult()));
+                    continue;
                 }
 
                 try
                 {
-                    var result = await SearchNvdWithFallbackAsync(suggestion.Keywords, nvdApiKey);
-                    return new { suggestion.AssetId, Result = result };
+                    var result = await SearchNvdWithFallbackAsync(suggestion.Keywords, nvdApiKey, ct);
+                    nvdResults.Add((suggestion.AssetId, result));
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "NVD query failed for asset {AssetId} with keywords {Keywords}", suggestion.AssetId, suggestion.Keywords);
-                    return new { suggestion.AssetId, Result = new NvdSearchResult() };
+                    nvdResults.Add((suggestion.AssetId, new NvdSearchResult()));
                 }
-            }).ToList();
-
-            var nvdResults = await Task.WhenAll(nvdTasks);
+            }
 
             // Flatten and deduplicate CVEs across the chunk
             var cveById = new Dictionary<string, NvdCve>();
@@ -180,6 +203,7 @@ public class AiCveMappingService : IAiCveMappingService
             }
 
             var totalCvesToScore = assetsWithCves.Sum(a => a.Cves.Count);
+            var scoringAssetName = chunkAssets.FirstOrDefault()?.Name ?? "assets";
 
             progress?.Report(new AiBulkScanProgress
             {
@@ -187,9 +211,9 @@ public class AiCveMappingService : IAiCveMappingService
                 ProcessedAssets = processedAssets,
                 CurrentChunk = chunkIndex + 1,
                 TotalChunks = totalChunks,
-                CurrentAssetName = chunkAssets.FirstOrDefault()?.Name,
+                CurrentAssetName = scoringAssetName,
                 TotalCvesFound = cveById.Count,
-                Stage = $"AI scoring {totalCvesToScore} CVEs against {chunkAssets.Count} assets..."
+                Stage = $"AI scoring {totalCvesToScore} CVEs..."
             });
 
             List<AiScoredResult> scoredResults;
@@ -471,8 +495,8 @@ public class AiCveMappingService : IAiCveMappingService
 
     private static List<AiKeywordSuggestion> ParseKeywordSuggestions(string rawResponse, List<AiAssetSummary> assets)
     {
-        var suggestions = new List<AiKeywordSuggestion>();
-        var assetMap = assets.ToDictionary(a => a.Name, a => a.Id, StringComparer.OrdinalIgnoreCase);
+        var suggestionsByAssetId = new Dictionary<Guid, AiKeywordSuggestion>();
+        var assetMap = assets.ToDictionary(a => a.Id, a => a);
 
         var json = JsonSerializer.Deserialize<JsonElement>(rawResponse);
         if (json.ValueKind == JsonValueKind.Object && json.TryGetProperty("results", out var resultsProp))
@@ -480,19 +504,20 @@ public class AiCveMappingService : IAiCveMappingService
             var results = resultsProp.GetString() ?? "";
             foreach (var line in results.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             {
-                var match = Regex.Match(line.Trim(), @"^ASSET:(.+?)\|KEYWORDS:(.+)$");
-                if (match.Success)
+                var match = Regex.Match(line.Trim(), @"^ASSET_ID:([0-9a-fA-F-]{36})\|KEYWORDS:(.+)$");
+                if (match.Success && Guid.TryParse(match.Groups[1].Value.Trim(), out var assetId))
                 {
-                    var assetName = match.Groups[1].Value.Trim();
                     var keywords = match.Groups[2].Value
                         .Split(',', StringSplitOptions.RemoveEmptyEntries)
                         .Select(k => k.Trim())
                         .Where(k => !string.IsNullOrEmpty(k))
+                        .Distinct()
                         .ToList();
 
-                    if (assetMap.TryGetValue(assetName, out var assetId))
+                    // Keep the first suggestion for each asset (ignore AI duplicates)
+                    if (assetMap.ContainsKey(assetId))
                     {
-                        suggestions.Add(new AiKeywordSuggestion(assetId, keywords));
+                        suggestionsByAssetId.TryAdd(assetId, new AiKeywordSuggestion(assetId, keywords));
                     }
                 }
             }
@@ -501,13 +526,13 @@ public class AiCveMappingService : IAiCveMappingService
         // Fallback for any missing assets
         foreach (var asset in assets)
         {
-            if (!suggestions.Any(s => s.AssetId == asset.Id))
+            if (!suggestionsByAssetId.ContainsKey(asset.Id))
             {
-                suggestions.Add(new AiKeywordSuggestion(asset.Id, FallbackKeywordsForAsset(asset)));
+                suggestionsByAssetId[asset.Id] = new AiKeywordSuggestion(asset.Id, FallbackKeywordsForAsset(asset));
             }
         }
 
-        return suggestions;
+        return suggestionsByAssetId.Values.ToList();
     }
 
     private static List<AiKeywordSuggestion> FallbackKeywordSuggestions(List<AiAssetSummary> assets)
@@ -515,10 +540,10 @@ public class AiCveMappingService : IAiCveMappingService
         return assets.Select(a => new AiKeywordSuggestion(a.Id, FallbackKeywordsForAsset(a))).ToList();
     }
 
-    private async Task<NvdSearchResult> SearchNvdWithFallbackAsync(List<string> keywords, string? nvdApiKey)
+    private async Task<NvdSearchResult> SearchNvdWithFallbackAsync(List<string> keywords, string? nvdApiKey, CancellationToken ct)
     {
         // Try original keywords
-        var result = await _nvdApi.SearchByKeywordsAsync(keywords, nvdApiKey);
+        var result = await _nvdApi.SearchByKeywordsAsync(keywords, nvdApiKey, ct);
         if (result.Vulnerabilities?.Count > 0) return result;
 
         _logger.LogInformation("NVD returned 0 results for keywords {Keywords}; trying broader versions", keywords);
@@ -527,7 +552,7 @@ public class AiCveMappingService : IAiCveMappingService
         var broadened = keywords.Select(BroadenVersionKeyword).Distinct().ToList();
         if (!broadened.SequenceEqual(keywords))
         {
-            result = await _nvdApi.SearchByKeywordsAsync(broadened, nvdApiKey);
+            result = await _nvdApi.SearchByKeywordsAsync(broadened, nvdApiKey, ct);
             if (result.Vulnerabilities?.Count > 0) return result;
         }
 
@@ -535,7 +560,7 @@ public class AiCveMappingService : IAiCveMappingService
         if (keywords.Count > 1)
         {
             _logger.LogInformation("NVD still 0 results; trying single keyword {Keyword}", keywords[0]);
-            result = await _nvdApi.SearchByKeywordsAsync([keywords[0]], nvdApiKey);
+            result = await _nvdApi.SearchByKeywordsAsync([keywords[0]], nvdApiKey, ct);
             if (result.Vulnerabilities?.Count > 0) return result;
         }
 
@@ -579,7 +604,7 @@ public class AiCveMappingService : IAiCveMappingService
     private static List<AiScoredResult> ParseScoredResults(string rawResponse, List<AiAssetSummary> assets)
     {
         var results = new List<AiScoredResult>();
-        var assetMap = assets.ToDictionary(a => a.Name, a => a.Id, StringComparer.OrdinalIgnoreCase);
+        var assetMap = assets.ToDictionary(a => a.Id, a => a);
 
         var json = JsonSerializer.Deserialize<JsonElement>(rawResponse);
         if (json.ValueKind == JsonValueKind.Object && json.TryGetProperty("results", out var resultsProp))
@@ -587,16 +612,15 @@ public class AiCveMappingService : IAiCveMappingService
             var resultsStr = resultsProp.GetString() ?? "";
             foreach (var line in resultsStr.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             {
-                var match = Regex.Match(line.Trim(), @"^ASSET:(.+?)\|CVE:(.+?)\|SCORE:(\d+)\|REASON:(.+?)\|MITIGATION:(.*)$");
-                if (match.Success)
+                var match = Regex.Match(line.Trim(), @"^ASSET_ID:([0-9a-fA-F-]{36})\|CVE:(.+?)\|SCORE:(\d+)\|REASON:(.+?)\|MITIGATION:(.*)$");
+                if (match.Success && Guid.TryParse(match.Groups[1].Value.Trim(), out var assetId))
                 {
-                    var assetName = match.Groups[1].Value.Trim();
                     var cveId = match.Groups[2].Value.Trim();
                     var score = int.Parse(match.Groups[3].Value);
                     var reason = match.Groups[4].Value.Trim();
                     var mitigation = match.Groups[5].Value.Trim();
 
-                    if (assetMap.TryGetValue(assetName, out var assetId))
+                    if (assetMap.ContainsKey(assetId))
                     {
                         results.Add(new AiScoredResult(
                             assetId,

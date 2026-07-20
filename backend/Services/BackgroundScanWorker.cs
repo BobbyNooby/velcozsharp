@@ -152,9 +152,10 @@ public class BackgroundScanWorker : BackgroundService
 
             foreach (var job in stuckJobs)
             {
-                job.Status = ScanJobStatus.Queued;
-                job.ErrorMessage = "Restarted after worker restart";
-                _logger.LogWarning("Reset stuck scan job {JobId} to Queued", job.Id);
+                job.Status = ScanJobStatus.Failed;
+                job.ErrorMessage = "Worker restarted while job was running";
+                job.CompletedAt = DateTime.UtcNow;
+                _logger.LogWarning("Marked stuck scan job {JobId} as Failed after worker restart", job.Id);
             }
 
             if (stuckJobs.Count > 0)
