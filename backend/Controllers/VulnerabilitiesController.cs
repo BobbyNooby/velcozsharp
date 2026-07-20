@@ -2,6 +2,7 @@ using backend.Data;
 using backend.Infrastructure.Pagination;
 using backend.Models.Dtos;
 using backend.Models.Entities;
+using backend.Models.Enums;
 using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -99,6 +100,9 @@ public class VulnerabilitiesController : TenantControllerBase
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
+
+        var auth = await RequireOrgRoleAsync(RoleNames.Admin, RoleNames.SecurityAnalyst);
+        if (auth != null) return auth;
 
         if (request.VulnerabilityIds == null || request.VulnerabilityIds.Count == 0)
             return BadRequest(new { message = "No vulnerability IDs provided" });

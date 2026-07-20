@@ -72,4 +72,20 @@ public abstract class TenantControllerBase : ControllerBase
 
         return null;
     }
+
+    /// <summary>
+    /// Ensures the current user has one of the allowed roles in the current organization.
+    /// Returns a Forbid result if not authorized, or null if authorized.
+    /// </summary>
+    protected async Task<IActionResult?> RequireOrgRoleAsync(params string[] allowedRoles)
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var role = await GetUserOrgRoleAsync(orgId.Value);
+        if (role == null || !allowedRoles.Contains(role))
+            return Forbid();
+
+        return null;
+    }
 }

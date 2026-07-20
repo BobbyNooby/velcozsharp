@@ -36,6 +36,9 @@ public class ScanController : TenantControllerBase
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
 
+        var auth = await RequireOrgRoleAsync(RoleNames.Admin, RoleNames.SecurityAnalyst);
+        if (auth != null) return auth;
+
         var asset = await _db.Assets
             .FirstOrDefaultAsync(a => a.Id == assetId && a.OrganizationId == orgId.Value);
 
@@ -65,6 +68,9 @@ public class ScanController : TenantControllerBase
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
+
+        var auth = await RequireOrgRoleAsync(RoleNames.Admin, RoleNames.SecurityAnalyst);
+        if (auth != null) return auth;
 
         if (request.AssetIds == null || request.AssetIds.Count == 0)
             return BadRequest(new { message = "No asset IDs provided" });
@@ -103,6 +109,9 @@ public class ScanController : TenantControllerBase
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
+
+        var auth = await RequireOrgRoleAsync(RoleNames.Admin, RoleNames.SecurityAnalyst);
+        if (auth != null) return auth;
 
         var assetIds = await _db.Assets
             .Where(a => a.OrganizationId == orgId.Value && a.Status != AssetStatus.Decommissioned)

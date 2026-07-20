@@ -103,6 +103,9 @@ public class ScanScheduleController : TenantControllerBase
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
 
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest(new { message = "Name is required" });
 
@@ -156,6 +159,9 @@ public class ScanScheduleController : TenantControllerBase
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
 
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
         var schedule = await _db.RecurringScanConfigs
             .FirstOrDefaultAsync(rc => rc.Id == id);
 
@@ -197,6 +203,9 @@ public class ScanScheduleController : TenantControllerBase
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
+
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
 
         var schedule = await _db.RecurringScanConfigs
             .FirstOrDefaultAsync(rc => rc.Id == id);

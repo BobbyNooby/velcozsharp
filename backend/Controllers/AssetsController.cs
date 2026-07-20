@@ -165,6 +165,9 @@ public class AssetsController : TenantControllerBase
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
 
+        var auth = await RequireOrgRoleAsync(RoleNames.Admin, RoleNames.SecurityAnalyst);
+        if (auth != null) return auth;
+
         var link = await _db.AssetVulnerabilities
             .Include(av => av.Vulnerability)
             .FirstOrDefaultAsync(av => av.AssetId == assetId && av.VulnerabilityId == vulnerabilityId && av.OrganizationId == orgId.Value);
@@ -189,6 +192,9 @@ public class AssetsController : TenantControllerBase
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
+
+        var auth = await RequireOrgRoleAsync(RoleNames.Admin, RoleNames.SecurityAnalyst);
+        if (auth != null) return auth;
 
         // Validate department belongs to org
         var deptExists = await _db.Departments.AnyAsync(d => d.Id == request.DepartmentId && d.IsActive);
@@ -244,6 +250,9 @@ public class AssetsController : TenantControllerBase
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
 
+        var auth = await RequireOrgRoleAsync(RoleNames.Admin, RoleNames.SecurityAnalyst);
+        if (auth != null) return auth;
+
         var asset = await _db.Assets
             .FirstOrDefaultAsync(a => a.Id == id && a.Status != AssetStatus.Decommissioned);
 
@@ -281,6 +290,9 @@ public class AssetsController : TenantControllerBase
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
+
+        var auth = await RequireOrgRoleAsync(RoleNames.Admin, RoleNames.SecurityAnalyst);
+        if (auth != null) return auth;
 
         var asset = await _db.Assets
             .FirstOrDefaultAsync(a => a.Id == id && a.Status != AssetStatus.Decommissioned);
