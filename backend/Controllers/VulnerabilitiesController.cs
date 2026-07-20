@@ -30,6 +30,9 @@ public class VulnerabilitiesController : TenantControllerBase
         [FromQuery] string? severity,
         [FromQuery] string? status,
         [FromQuery] Guid? assetTypeId,
+        [FromQuery] string? attackVector,
+        [FromQuery] string? privilegesRequired,
+        [FromQuery] string? userInteraction,
         [FromQuery] string? sortBy,
         [FromQuery] string? sortOrder,
         [FromQuery] int page = 1,
@@ -56,6 +59,15 @@ public class VulnerabilitiesController : TenantControllerBase
 
         if (assetTypeId.HasValue)
             query = query.Where(av => av.Asset.AssetTypeId == assetTypeId.Value);
+
+        if (!string.IsNullOrWhiteSpace(attackVector))
+            query = query.Where(av => av.Vulnerability.AttackVector != null && av.Vulnerability.AttackVector.ToLower() == attackVector.ToLower());
+
+        if (!string.IsNullOrWhiteSpace(privilegesRequired))
+            query = query.Where(av => av.Vulnerability.PrivilegesRequired != null && av.Vulnerability.PrivilegesRequired.ToLower() == privilegesRequired.ToLower());
+
+        if (!string.IsNullOrWhiteSpace(userInteraction))
+            query = query.Where(av => av.Vulnerability.UserInteraction != null && av.Vulnerability.UserInteraction.ToLower() == userInteraction.ToLower());
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -85,6 +97,9 @@ public class VulnerabilitiesController : TenantControllerBase
                 Description = av.Vulnerability.Description,
                 CvssScore = av.Vulnerability.CvssScore,
                 Severity = av.Vulnerability.Severity,
+                AttackVector = av.Vulnerability.AttackVector,
+                PrivilegesRequired = av.Vulnerability.PrivilegesRequired,
+                UserInteraction = av.Vulnerability.UserInteraction,
                 PublishedDate = av.Vulnerability.PublishedDate,
                 DetectedAt = av.DetectedAt,
                 Status = av.Status,
@@ -102,7 +117,10 @@ public class VulnerabilitiesController : TenantControllerBase
         [FromQuery] string? search,
         [FromQuery] string? severity,
         [FromQuery] string? status,
-        [FromQuery] Guid? assetTypeId)
+        [FromQuery] Guid? assetTypeId,
+        [FromQuery] string? attackVector,
+        [FromQuery] string? privilegesRequired,
+        [FromQuery] string? userInteraction)
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
@@ -114,6 +132,9 @@ public class VulnerabilitiesController : TenantControllerBase
         if (!string.IsNullOrWhiteSpace(severity)) query = query.Where(av => av.Vulnerability.Severity == severity);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(av => av.Status == status);
         if (assetTypeId.HasValue) query = query.Where(av => av.Asset.AssetTypeId == assetTypeId.Value);
+        if (!string.IsNullOrWhiteSpace(attackVector)) query = query.Where(av => av.Vulnerability.AttackVector != null && av.Vulnerability.AttackVector.ToLower() == attackVector.ToLower());
+        if (!string.IsNullOrWhiteSpace(privilegesRequired)) query = query.Where(av => av.Vulnerability.PrivilegesRequired != null && av.Vulnerability.PrivilegesRequired.ToLower() == privilegesRequired.ToLower());
+        if (!string.IsNullOrWhiteSpace(userInteraction)) query = query.Where(av => av.Vulnerability.UserInteraction != null && av.Vulnerability.UserInteraction.ToLower() == userInteraction.ToLower());
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
@@ -124,6 +145,31 @@ public class VulnerabilitiesController : TenantControllerBase
 
         var count = await query.CountAsync();
         return Ok(new { count });
+    }
+
+    [HttpGet("vectors")]
+    public async Task<IActionResult> GetVectorOptions()
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var vectors = await _db.AssetVulnerabilities
+            .Where(av => av.OrganizationId == orgId.Value)
+            .Select(av => new
+            {
+                av.Vulnerability.AttackVector,
+                av.Vulnerability.PrivilegesRequired,
+                av.Vulnerability.UserInteraction
+            })
+            .Distinct()
+            .ToListAsync();
+
+        return Ok(new
+        {
+            attackVectors = vectors.Select(v => v.AttackVector).Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().OrderBy(v => v),
+            privilegesRequired = vectors.Select(v => v.PrivilegesRequired).Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().OrderBy(v => v),
+            userInteractions = vectors.Select(v => v.UserInteraction).Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().OrderBy(v => v)
+        });
     }
 
     [HttpPatch("bulk-status")]

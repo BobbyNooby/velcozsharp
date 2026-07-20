@@ -85,7 +85,10 @@ public class ExportController : TenantControllerBase
         [FromQuery] string? search,
         [FromQuery] string? severity,
         [FromQuery] string? status,
-        [FromQuery] Guid? assetTypeId)
+        [FromQuery] Guid? assetTypeId,
+        [FromQuery] string? attackVector,
+        [FromQuery] string? privilegesRequired,
+        [FromQuery] string? userInteraction)
     {
         var orgId = await GetCurrentOrgIdAsync();
         if (!orgId.HasValue) return Forbid();
@@ -100,6 +103,9 @@ public class ExportController : TenantControllerBase
         if (!string.IsNullOrWhiteSpace(severity)) query = query.Where(av => av.Vulnerability.Severity == severity);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(av => av.Status == status);
         if (assetTypeId.HasValue) query = query.Where(av => av.Asset.AssetTypeId == assetTypeId.Value);
+        if (!string.IsNullOrWhiteSpace(attackVector)) query = query.Where(av => av.Vulnerability.AttackVector != null && av.Vulnerability.AttackVector.ToLower() == attackVector.ToLower());
+        if (!string.IsNullOrWhiteSpace(privilegesRequired)) query = query.Where(av => av.Vulnerability.PrivilegesRequired != null && av.Vulnerability.PrivilegesRequired.ToLower() == privilegesRequired.ToLower());
+        if (!string.IsNullOrWhiteSpace(userInteraction)) query = query.Where(av => av.Vulnerability.UserInteraction != null && av.Vulnerability.UserInteraction.ToLower() == userInteraction.ToLower());
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
@@ -119,6 +125,9 @@ public class ExportController : TenantControllerBase
                 Description = av.Vulnerability.Description,
                 Severity = av.Vulnerability.Severity,
                 CvssScore = av.Vulnerability.CvssScore,
+                AttackVector = av.Vulnerability.AttackVector,
+                PrivilegesRequired = av.Vulnerability.PrivilegesRequired,
+                UserInteraction = av.Vulnerability.UserInteraction,
                 Status = av.Status,
                 DetectedAt = av.DetectedAt,
                 PublishedDate = av.Vulnerability.PublishedDate
@@ -230,6 +239,9 @@ public class VulnerabilityExportRecord
     public string? Description { get; set; }
     public string? Severity { get; set; }
     public double? CvssScore { get; set; }
+    public string? AttackVector { get; set; }
+    public string? PrivilegesRequired { get; set; }
+    public string? UserInteraction { get; set; }
     public string Status { get; set; } = "";
     public DateTime? DetectedAt { get; set; }
     public DateTime? PublishedDate { get; set; }

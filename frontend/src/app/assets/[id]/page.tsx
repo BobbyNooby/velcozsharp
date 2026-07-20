@@ -12,6 +12,9 @@ type Vulnerability = {
   description?: string;
   cvssScore?: number;
   severity?: string;
+  attackVector?: string;
+  privilegesRequired?: string;
+  userInteraction?: string;
   publishedDate?: string;
   detectedAt: string;
   status: string;
@@ -60,6 +63,21 @@ const criticalityColors: Record<string, string> = {
   Medium: "bg-yellow-100 text-yellow-700 border-yellow-300",
   Low: "bg-blue-100 text-blue-700 border-blue-300",
 };
+
+const vectorLabels: Record<string, string> = {
+  NETWORK: "Network",
+  ADJACENT_NETWORK: "Adjacent",
+  LOCAL: "Local",
+  PHYSICAL: "Physical",
+};
+
+function formatVectorSummary(attackVector?: string, privilegesRequired?: string, userInteraction?: string) {
+  const parts: string[] = [];
+  if (attackVector) parts.push(vectorLabels[attackVector.toUpperCase()] ?? attackVector);
+  if (privilegesRequired) parts.push(privilegesRequired.toUpperCase() === "NONE" ? "no privileges" : `${privilegesRequired.toLowerCase()} privileges`);
+  if (userInteraction) parts.push(userInteraction.toUpperCase() === "NONE" ? "no user interaction" : "user interaction required");
+  return parts.join(" / ") || "—";
+}
 
 export default function AssetDetailPage() {
   const params = useParams();
@@ -389,6 +407,11 @@ export default function AssetDetailPage() {
             <div className="flex flex-wrap gap-3 text-xs text-gray-500">
               {vuln.matchedKeyword && (
                 <span>Matched: <span className="font-medium">{vuln.matchedKeyword}</span></span>
+              )}
+              {vuln.attackVector && (
+                <span>
+                  Vector: <span className="font-medium">{formatVectorSummary(vuln.attackVector, vuln.privilegesRequired, vuln.userInteraction)}</span>
+                </span>
               )}
               {vuln.publishedDate && (
                 <span>Published: {new Date(vuln.publishedDate).toLocaleDateString()}</span>

@@ -320,6 +320,9 @@ public class AiCveMappingService : IAiCveMappingService
                             Description = description.Length > 2000 ? description[..2000] : description,
                             CvssScore = cvssData?.BaseScore,
                             Severity = cvssData?.BaseSeverity,
+                            AttackVector = cvssData?.AttackVector,
+                            PrivilegesRequired = cvssData?.PrivilegesRequired,
+                            UserInteraction = cvssData?.UserInteraction,
                             PublishedDate = ParseDate(cve.Published),
                             FetchedAt = DateTime.UtcNow,
                             AiSuggestedMitigation = scoreResult.Mitigation
@@ -329,6 +332,14 @@ public class AiCveMappingService : IAiCveMappingService
                     else if (!string.IsNullOrEmpty(scoreResult.Mitigation))
                     {
                         vulnerability.AiSuggestedMitigation = scoreResult.Mitigation;
+                    }
+
+                    // Keep vector fields in sync if NVD data has been refined
+                    if (!string.IsNullOrEmpty(cvssData?.AttackVector))
+                    {
+                        vulnerability.AttackVector = cvssData.AttackVector;
+                        vulnerability.PrivilegesRequired = cvssData.PrivilegesRequired;
+                        vulnerability.UserInteraction = cvssData.UserInteraction;
                     }
 
                     // Upsert AssetVulnerability

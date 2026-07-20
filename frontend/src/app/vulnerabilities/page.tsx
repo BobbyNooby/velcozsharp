@@ -34,6 +34,9 @@ type Vuln = {
   description?: string;
   cvssScore?: number;
   severity?: string;
+  attackVector?: string;
+  privilegesRequired?: string;
+  userInteraction?: string;
   publishedDate?: string;
   detectedAt: string;
   status: string;
@@ -56,6 +59,39 @@ const statusColors: Record<string, string> = {
   Mitigated: "bg-green-100 text-green-700 hover:bg-green-100",
 };
 
+const vectorLabels: Record<string, string> = {
+  NETWORK: "Network",
+  ADJACENT_NETWORK: "Adjacent",
+  LOCAL: "Local",
+  PHYSICAL: "Physical",
+};
+
+const privilegesLabels: Record<string, string> = {
+  NONE: "No privileges",
+  LOW: "Low privileges",
+  HIGH: "High privileges",
+};
+
+const interactionLabels: Record<string, string> = {
+  NONE: "No interaction",
+  REQUIRED: "User interaction",
+};
+
+function formatVector(value?: string) {
+  if (!value) return "—";
+  return vectorLabels[value.toUpperCase()] ?? value;
+}
+
+function formatPrivileges(value?: string) {
+  if (!value) return null;
+  return privilegesLabels[value.toUpperCase()] ?? value;
+}
+
+function formatInteraction(value?: string) {
+  if (!value) return null;
+  return interactionLabels[value.toUpperCase()] ?? value;
+}
+
 export default function VulnerabilitiesPage() {
   const { orgId, authReady } = useOrg();
   const apiFetch = useApiFetch();
@@ -72,6 +108,9 @@ export default function VulnerabilitiesPage() {
   const [severityFilter, setSeverityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [assetTypeFilter, setAssetTypeFilter] = useState("");
+  const [attackVectorFilter, setAttackVectorFilter] = useState("");
+  const [privilegesRequiredFilter, setPrivilegesRequiredFilter] = useState("");
+  const [userInteractionFilter, setUserInteractionFilter] = useState("");
   const [sortBy, setSortBy] = useState("cvss");
   const [sortOrder, setSortOrder] = useState("desc");
 
@@ -120,6 +159,9 @@ export default function VulnerabilitiesPage() {
     if (severityFilter && severityFilter !== " ") params.set("severity", severityFilter);
     if (statusFilter && statusFilter !== " ") params.set("status", statusFilter);
     if (assetTypeFilter && assetTypeFilter !== " ") params.set("assetTypeId", assetTypeFilter);
+    if (attackVectorFilter && attackVectorFilter !== " ") params.set("attackVector", attackVectorFilter);
+    if (privilegesRequiredFilter && privilegesRequiredFilter !== " ") params.set("privilegesRequired", privilegesRequiredFilter);
+    if (userInteractionFilter && userInteractionFilter !== " ") params.set("userInteraction", userInteractionFilter);
 
     apiFetch(`/vulnerabilities?${params.toString()}`, { signal: controller.signal })
       .then(async (res) => {
@@ -136,7 +178,7 @@ export default function VulnerabilitiesPage() {
       });
 
     return () => controller.abort();
-  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, debouncedSearch, severityFilter, statusFilter, assetTypeFilter]);
+  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, debouncedSearch, severityFilter, statusFilter, assetTypeFilter, attackVectorFilter, privilegesRequiredFilter, userInteractionFilter]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
@@ -208,6 +250,9 @@ export default function VulnerabilitiesPage() {
               ...(severityFilter && severityFilter !== " " ? { severity: severityFilter } : {}),
               ...(statusFilter && statusFilter !== " " ? { status: statusFilter } : {}),
               ...(assetTypeFilter && assetTypeFilter !== " " ? { assetTypeId: assetTypeFilter } : {}),
+              ...(attackVectorFilter && attackVectorFilter !== " " ? { attackVector: attackVectorFilter } : {}),
+              ...(privilegesRequiredFilter && privilegesRequiredFilter !== " " ? { privilegesRequired: privilegesRequiredFilter } : {}),
+              ...(userInteractionFilter && userInteractionFilter !== " " ? { userInteraction: userInteractionFilter } : {}),
             }}
           />
           <Button>
@@ -296,6 +341,39 @@ export default function VulnerabilitiesPage() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={attackVectorFilter} onValueChange={(v) => { setAttackVectorFilter(v ?? ""); setPage(1); }}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Attack Vector" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value=" ">All Vectors</SelectItem>
+            <SelectItem value="NETWORK">Network</SelectItem>
+            <SelectItem value="ADJACENT_NETWORK">Adjacent</SelectItem>
+            <SelectItem value="LOCAL">Local</SelectItem>
+            <SelectItem value="PHYSICAL">Physical</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={privilegesRequiredFilter} onValueChange={(v) => { setPrivilegesRequiredFilter(v ?? ""); setPage(1); }}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Privileges" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value=" ">All Privileges</SelectItem>
+            <SelectItem value="NONE">None</SelectItem>
+            <SelectItem value="LOW">Low</SelectItem>
+            <SelectItem value="HIGH">High</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={userInteractionFilter} onValueChange={(v) => { setUserInteractionFilter(v ?? ""); setPage(1); }}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Interaction" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value=" ">All Interactions</SelectItem>
+            <SelectItem value="NONE">None</SelectItem>
+            <SelectItem value="REQUIRED">Required</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={sortBy} onValueChange={(v) => { setSortBy(v ?? ""); setPage(1); }}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="Sort by" />
@@ -346,6 +424,7 @@ export default function VulnerabilitiesPage() {
               <TableHead>CVE ID</TableHead>
               <TableHead>Severity</TableHead>
               <TableHead>CVSS</TableHead>
+              <TableHead>Vector</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Detected</TableHead>
               <TableHead>Published</TableHead>
@@ -355,14 +434,14 @@ export default function VulnerabilitiesPage() {
           <TableBody>
             {(loading || !authReady) && (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                   Loading...
                 </TableCell>
               </TableRow>
             )}
             {authReady && !loading && vulns.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                   No vulnerabilities found
                 </TableCell>
               </TableRow>
@@ -390,6 +469,17 @@ export default function VulnerabilitiesPage() {
                   )}
                 </TableCell>
                 <TableCell>{v.cvssScore ?? "—"}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {v.attackVector ? (
+                    <div className="space-y-0.5">
+                      <div>{formatVector(v.attackVector)}</div>
+                      {v.privilegesRequired && <div className="text-gray-500">{formatPrivileges(v.privilegesRequired)}</div>}
+                      {v.userInteraction && <div className="text-gray-500">{formatInteraction(v.userInteraction)}</div>}
+                    </div>
+                  ) : (
+                    "—"
+                  )}
+                </TableCell>
                 <TableCell>
                   <Badge className={statusColors[v.status] ?? ""}>{v.status}</Badge>
                 </TableCell>
