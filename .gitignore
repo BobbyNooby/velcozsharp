@@ -39,6 +39,7 @@ logs/
 secrets.json
 *.pfx
 *.key
+backend/appsettings.Development.json
 
 # ----------------------------------------
 # Docker

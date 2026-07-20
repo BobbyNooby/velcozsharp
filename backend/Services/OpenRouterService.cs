@@ -6,7 +6,7 @@ namespace backend.Services;
 
 public interface IOpenRouterService
 {
-    Task<string> ChatAsync(string userMessage, CancellationToken ct = default);
+    Task<string> ChatAsync(string userMessage, bool requireJson = false, CancellationToken ct = default);
     Task<AiCveResult?> ScoreCveRelevanceAsync(string cveId, string description, string assetName, Dictionary<string, object> assetProperties, CancellationToken ct = default);
 }
 
@@ -22,7 +22,7 @@ public class OpenRouterService : IOpenRouterService
         _logger = logger;
 
         var apiKey = configuration["OpenRouter:ApiKey"] ?? "";
-        var model = configuration["OpenRouter:Model"] ?? "openrouter/free";
+        var model = configuration["OpenRouter:Model"] ?? "deepseek/deepseek-v4-flash";
 
         _model = model;
 
@@ -33,15 +33,16 @@ public class OpenRouterService : IOpenRouterService
         _httpClient.Timeout = TimeSpan.FromSeconds(60);
     }
 
-    public async Task<string> ChatAsync(string userMessage, CancellationToken ct = default)
+    public async Task<string> ChatAsync(string userMessage, bool requireJson = false, CancellationToken ct = default)
     {
-        var requestBody = new
+        var requestBody = new OpenRouterChatRequest
         {
-            model = _model,
-            messages = new[]
-            {
-                new { role = "user", content = userMessage }
-            }
+            Model = _model,
+            Messages =
+            [
+                new OpenRouterMessageRequest { Role = "user", Content = userMessage }
+            ],
+            ResponseFormat = requireJson ? new OpenRouterResponseFormat { Type = "json_object" } : null
         };
 
         var json = JsonSerializer.Serialize(requestBody);
@@ -84,7 +85,7 @@ Return ONLY a JSON object with these fields (no markdown, no code block):
 A score of 0 means the CVE is completely unrelated to this asset. A score of 100 means it is definitely applicable.
 Do NOT hallucinate CVEs. Do NOT recommend actions outside of standard vulnerability management.";
 
-        var reply = await ChatAsync(prompt, ct);
+        var reply = await ChatAsync(prompt, requireJson: true, ct);
 
         try
         {
@@ -111,6 +112,34 @@ Do NOT hallucinate CVEs. Do NOT recommend actions outside of standard vulnerabil
             _logger.LogWarning(ex, "Failed to parse AI response for CVE {CveId}: {Response}", cveId, reply[..Math.Min(200, reply.Length)]);
             return null;
         }
+    }
+
+    private class OpenRouterChatRequest
+    {
+        [JsonPropertyName("model")]
+        public string Model { get; set; } = "";
+
+        [JsonPropertyName("messages")]
+        public List<OpenRouterMessageRequest> Messages { get; set; } = [];
+
+        [JsonPropertyName("response_format")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public OpenRouterResponseFormat? ResponseFormat { get; set; }
+    }
+
+    private class OpenRouterMessageRequest
+    {
+        [JsonPropertyName("role")]
+        public string Role { get; set; } = "";
+
+        [JsonPropertyName("content")]
+        public string Content { get; set; } = "";
+    }
+
+    private class OpenRouterResponseFormat
+    {
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = "json_object";
     }
 
     private class OpenRouterChatResponse
