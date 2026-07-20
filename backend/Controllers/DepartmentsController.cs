@@ -142,4 +142,31 @@ public class DepartmentsController : TenantControllerBase
 
         return NoContent();
     }
+
+    [HttpPost("{id:guid}/reactivate")]
+    public async Task<IActionResult> Reactivate(Guid id)
+    {
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var department = await _db.Departments
+            .FirstOrDefaultAsync(d => d.Id == id && d.OrganizationId == orgId.Value);
+        if (department == null) return NotFound();
+
+        if (department.IsActive)
+            return BadRequest(new { message = "Department is already active." });
+
+        department.IsActive = true;
+        await _db.SaveChangesAsync();
+
+        return Ok(new DepartmentResponse
+        {
+            Id = department.Id,
+            Name = department.Name,
+            IsActive = department.IsActive
+        });
+    }
 }

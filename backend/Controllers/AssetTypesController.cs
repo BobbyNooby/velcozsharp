@@ -172,4 +172,26 @@ public class AssetTypesController : TenantControllerBase
 
         return Ok(new { message = $"Asset type deleted. {reassignedCount} asset(s) reassigned to 'Unknown'." });
     }
+
+    [HttpPost("{id:guid}/reactivate")]
+    public async Task<IActionResult> Reactivate(Guid id)
+    {
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var assetType = await _db.AssetTypeDefinitions
+            .FirstOrDefaultAsync(at => at.Id == id && at.OrganizationId == orgId.Value);
+        if (assetType == null) return NotFound();
+
+        if (assetType.IsActive)
+            return BadRequest(new { message = "Asset type is already active." });
+
+        assetType.IsActive = true;
+        await _db.SaveChangesAsync();
+
+        return Ok(assetType.ToResponse());
+    }
 }

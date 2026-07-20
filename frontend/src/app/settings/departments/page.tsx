@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { RotateCcw } from "lucide-react";
 
 type Department = {
   id: string;
@@ -67,6 +68,17 @@ export default function DepartmentsPage() {
     fetchDepartments();
   }, [orgId, apiFetch, page, pageSize, debouncedSearch, showInactive]);
 
+  const reactivate = async (id: string) => {
+    const res = await apiFetch(`/departments/${id}/reactivate`, { method: "POST" });
+    if (res.ok) {
+      setMessage("Department reactivated.");
+      fetchDepartments();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setMessage(data.message || "Failed to reactivate department.");
+    }
+  };
+
   if (!authReady) return <div className="max-w-7xl mx-auto p-6">Loading...</div>;
 
   return (
@@ -105,6 +117,7 @@ export default function DepartmentsPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="w-32">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -112,6 +125,13 @@ export default function DepartmentsPage() {
                   <TableRow key={d.id}>
                     <TableCell>{d.name}</TableCell>
                     <TableCell>{d.isActive ? "Active" : "Inactive"}</TableCell>
+                    <TableCell>
+                      {!d.isActive && (
+                        <Button variant="outline" size="sm" onClick={() => reactivate(d.id)}>
+                          <RotateCcw className="w-4 h-4 mr-1" /> Reactivate
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

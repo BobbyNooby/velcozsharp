@@ -28,6 +28,7 @@ public class OrganizationsController : TenantControllerBase
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search,
         [FromQuery] bool? activeOnly,
+        [FromQuery] bool? includeInactive,
         [FromQuery] string? sortBy,
         [FromQuery] string? sortOrder,
         [FromQuery] int page = 1,
@@ -45,7 +46,8 @@ public class OrganizationsController : TenantControllerBase
             .Select(uo => uo.Organization)
             .AsQueryable();
 
-        if (!activeOnly.HasValue || activeOnly.Value)
+        var showInactive = includeInactive.HasValue && includeInactive.Value;
+        if ((activeOnly.HasValue && activeOnly.Value) || (!activeOnly.HasValue && !showInactive))
             query = query.Where(o => o.IsActive);
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -186,5 +188,33 @@ public class OrganizationsController : TenantControllerBase
         await _db.SaveChangesAsync();
 
         return Ok(new { message = $"Organization deleted. {reassignedCount} asset(s) reassigned to 'Unknown'." });
+    }
+
+    [HttpPost("{id:guid}/reactivate")]
+    public async Task<IActionResult> Reactivate(Guid id)
+    {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (orgId != id) return NotFound();
+
+        var auth = await RequireOrgAdminAsync();
+        if (auth != null) return auth;
+
+        var org = await _db.Organizations.FirstOrDefaultAsync(o => o.Id == id);
+        if (org == null) return NotFound();
+
+        if (org.IsActive)
+            return BadRequest(new { message = "Organization is already active." });
+
+        org.IsActive = true;
+        await _db.SaveChangesAsync();
+
+        return Ok(new OrganizationResponse
+        {
+            Id = org.Id,
+            Name = org.Name,
+            Description = org.Description,
+            IsActive = org.IsActive,
+            CreatedAt = org.CreatedAt
+        });
     }
 }

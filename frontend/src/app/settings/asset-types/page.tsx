@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { RotateCcw } from "lucide-react";
 
 type AssetType = {
   id: string;
@@ -30,6 +31,7 @@ export default function AssetTypesPage() {
 
   const [types, setTypes] = useState<AssetType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const [showInactive, setShowInactive] = useState(false);
@@ -69,6 +71,17 @@ export default function AssetTypesPage() {
     fetchTypes();
   }, [orgId, apiFetch, page, pageSize, debouncedSearch, showInactive]);
 
+  const reactivate = async (id: string) => {
+    const res = await apiFetch(`/asset-types/${id}/reactivate`, { method: "POST" });
+    if (res.ok) {
+      setMessage("Asset type reactivated.");
+      fetchTypes();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setMessage(data.message || "Failed to reactivate asset type.");
+    }
+  };
+
   if (!authReady) return <div className="max-w-7xl mx-auto p-6">Loading...</div>;
 
   return (
@@ -77,6 +90,8 @@ export default function AssetTypesPage() {
         <h1 className="text-2xl font-bold">Asset Types</h1>
         <p className="text-sm text-muted-foreground">Manage asset type definitions</p>
       </div>
+
+      {message && <div className="bg-blue-50 text-blue-700 px-3 py-2 rounded text-sm">{message}</div>}
 
       <div className="flex flex-wrap gap-3 items-end">
         <div className="flex-1 min-w-[200px]">
@@ -104,6 +119,7 @@ export default function AssetTypesPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Fields</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="w-32">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -112,6 +128,13 @@ export default function AssetTypesPage() {
                     <TableCell>{t.name}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.fields.map((f) => f.name).join(", ")}</TableCell>
                     <TableCell>{t.isActive ? "Active" : "Inactive"}</TableCell>
+                    <TableCell>
+                      {!t.isActive && (
+                        <Button variant="outline" size="sm" onClick={() => reactivate(t.id)}>
+                          <RotateCcw className="w-4 h-4 mr-1" /> Reactivate
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
