@@ -24,7 +24,7 @@ public class AiController : ControllerBase
 
         try
         {
-            var reply = await _openRouter.ChatAsync(request.Message);
+            var reply = await _openRouter.ChatAsync(request.Message, request.RequireJson);
             return Ok(new AiChatResponse { Reply = reply });
         }
         catch (HttpRequestException ex)
@@ -37,6 +37,7 @@ public class AiController : ControllerBase
 public class AiChatRequest
 {
     public string Message { get; set; } = "";
+    public bool RequireJson { get; set; }
 }
 
 public class AiChatResponse
