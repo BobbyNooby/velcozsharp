@@ -25,5 +25,5 @@
 - **Audit trail** — Immutable before/after logs for every change, capturing who did what and when
 - **AI-assisted CVE relevance scoring** — OpenRouter ranks NVD results to reduce false positives
 - **AI-suggested mitigations** — OpenRouter recommends patch/update steps (human-verified before action)
-- **Risk dashboard** — Real-time charts showing exposure by severity, department, and asset type
-- **Export** — Generate CSV and PDF security reports for leadership
+- **Risk dashboard** — Real-time stats showing exposure by severity, department, and asset type
+- **Export** — Generate CSV and JSON security reports for leadership

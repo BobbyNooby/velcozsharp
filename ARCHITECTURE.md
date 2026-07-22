@@ -1,7 +1,7 @@
 # VelcozSharp Architecture
 
 > Project overview and technical architecture for contributors and AI agents.
-> Last updated: 2026-07-13 (OpenRouter AI integration added; SignalR real-time notifications; planning docs in `planning/` — local only, not committed)
+> Last updated: 2026-07-22 (AI integration implemented; CVSS vector filters; org AI tuning; auth/onboarding UI gaps identified)
 
 ---
 
@@ -362,39 +362,37 @@ npx kill-port 3000
 
 ## OpenRouter / AI Integration
 
-> **Status: Designed but NOT yet implemented.** This is the #1 post-MVP feature.
-> The architecture below describes the intended design. The service files, DB fields, and UI badges do not exist yet.
+> **Status: Implemented.** The AI deep scan pipeline is built and operational.
 
-VelcozSharp will use the **OpenRouter API** from the backend to enhance vulnerability triage. AI calls are server-side only; the API key never reaches the frontend.
+VelcozSharp uses the **OpenRouter API** from the backend to enhance vulnerability triage. AI calls are server-side only; the API key never reaches the frontend.
 
 ### Use Cases
 
 1. **CVE Relevance Scoring**
-   - After `RegexCveMappingService` returns candidate CVEs from NVD, `OpenRouterService` scores each candidate 0–100 for relevance to the specific asset.
+   - `AiCveMappingService` orchestrates a 2-pass AI workflow: first it asks the LLM to suggest NVD keyword search terms per asset, then it asks the LLM to score each returned CVE 0–100 for relevance to the specific asset based on version matching.
    - The score is stored on `AssetVulnerability.AiRelevanceScore`.
-   - The UI defaults to showing matches above a configurable threshold, reducing false positives from keyword-only search.
+   - The AI prompt instructs the model to compare the asset's version against the CVE's affected version range and ignore CVSS severity when deciding relevance.
 
 2. **Mitigation Suggestions**
-   - For linked CVEs, `OpenRouterService` suggests patch, upgrade, or workaround steps.
+   - For linked CVEs, the LLM suggests patch, upgrade, or workaround steps.
    - Suggestions are stored on `Vulnerability.AiSuggestedMitigation`.
-   - The UI labels them as **"AI Suggested (unverified)"** and requires a human to confirm any status change to `Mitigated`.
 
 ### Safety Guardrails
 
-- AI never creates or deletes vulnerability records.
+- AI never creates or deletes vulnerability records on its own; `AiCveMappingService` persists only after scoring.
 - AI never changes `AssetVulnerability.Status` directly.
-- All AI suggestions are logged in the audit trail alongside the human decision.
-- The `Organization.IsAiEnabled` flag controls whether AI features are active per organization.
+- AI scoring is gated by `Organization.IsAiEnabled`, `AiChunkSize`, `AiMaxCvesPerAsset`, and `AiMinScore`.
 
 ### Configuration
 
-- **Development:** OpenRouter API key stored in `backend/appsettings.Development.json` or user secrets (`dotnet user-secrets`).
+- **Development:** OpenRouter API key stored in `dotnet user-secrets` (do not commit to `appsettings.Development.json`).
 - **Production:** Key injected via environment variable or Azure Key Vault.
 
 ### Service Placement
 
-- `OpenRouterService` will live in `backend/Services/` and be called by `RegexCveMappingService` and `AssetsController`.
-- Prompts will be version-controlled in `backend/Services/Ai/Prompts/`.
+- `OpenRouterService` lives in `backend/Services/`.
+- `AiCveMappingService` calls it for keyword suggestion and CVE scoring.
+- Prompt templates live in `backend/Prompts/` and are loaded as embedded resources via `AiPrompts.cs`.
 
 ---
 
@@ -411,7 +409,7 @@ The following are explicitly **not planned** for VelcozSharp. They add complexit
 | Multi-instance scaling / K8s / Terraform | Not running production scale |
 | Table partitioning / pg_cron / DB-level archiving | Unnecessary without millions of rows |
 | Dashboard widgets / customization | Polishing, not differentiating |
-| Org Settings & User Preferences | Polishing, not differentiating |
+| Org Settings & User Preferences | Moved to MVP — implemented under `/settings` |
 
 ## Post-MVP Overengineering Roadmap
 
@@ -419,11 +417,13 @@ The following are **designed but not yet built**. These are the "impressive but 
 
 | Priority | Feature | What It Demonstrates |
 |----------|---------|---------------------|
-| **#1** | **OpenRouter AI Integration** — CVE relevance scoring + mitigation suggestions | AI integration, prompt engineering |
-| **#2** | **Charts & Data Viz Dashboard** — Recharts/Tremor donut, bar, line charts | Polished UX, data visualization |
-| **#3** | **CI/CD + Containerization + Cloud Deploy** — Dockerfile, GitHub Actions, Render/Azure | DevOps maturity, production deployment |
-| **#4** | **CISA KEV + EPSS Enrichment** — actively exploited CVEs + exploit probability | Deep security domain expertise |
-| **#5** | **API Tokens + Webhook Integrations** — scoped keys, outgoing webhooks with retry | Platform thinking, SaaS architecture |
-| **#6** | **Redis Caching Layer** — dashboard stats, NVD results, asset pages | Performance engineering, distributed systems |
+| **#1** | **Auth & Onboarding UI** — login page, register page, auth middleware, first-run onboarding | Required before real-world usage |
+| **#2** | **OpenRouter AI Integration** — CVE relevance scoring + mitigation suggestions | AI integration, prompt engineering |
+| **#3** | **Charts & Data Viz Dashboard** — Recharts/Tremor donut, bar, line charts | Polished UX, data visualization |
+| **#4** | **CI/CD + Containerization + Cloud Deploy** — Dockerfile, GitHub Actions, Render/Azure | DevOps maturity, production deployment |
+| **#5** | **CISA KEV + EPSS Enrichment** — actively exploited CVEs + exploit probability | Deep security domain expertise |
+| **#6** | **Platform Admin / Host Dashboard** — manage all orgs, users, instance config | SaaS platform operations |
+| **#7** | **API Tokens + Webhook Integrations** — scoped keys, outgoing webhooks with retry | Platform thinking, SaaS architecture |
+| **#8** | **Redis Caching Layer** — dashboard stats, NVD results, asset pages | Performance engineering, distributed systems |
 
 Full details, effort estimates, and implementation notes for each are tracked in [`planning/FUTURE-IMPROVEMENTS.md`](./planning/FUTURE-IMPROVEMENTS.md) (local only, not committed).
