@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Navbar from "@/components/navbar";
-import { OrgProvider } from "@/lib/api";
+import { AuthProvider } from "@/lib/auth";
 import { JobProvider } from "@/lib/jobs";
 import { ToastProvider } from "@/lib/toast";
 import { SignalRProvider } from "@/lib/signalr";
@@ -32,17 +31,14 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
-        <OrgProvider>
+      <body className="min-h-full bg-background text-foreground">
+        <AuthProvider>
           <ToastProvider>
             <SignalRProvider>
-              <JobProvider>
-                <Navbar />
-                <main className="flex-1">{children}</main>
-              </JobProvider>
+              <JobProvider>{children}</JobProvider>
             </SignalRProvider>
           </ToastProvider>
-        </OrgProvider>
+        </AuthProvider>
       </body>
     </html>
   );

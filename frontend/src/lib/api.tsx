@@ -1,15 +1,11 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { setOrgCookie, clearOrgCookie, type Org } from "@/lib/org-cookie";
+
+export type { Org };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5038/api";
-
-export type Org = {
-  id: string;
-  name: string;
-  role: string;
-  isDefault: boolean;
-};
 
 type OrgContextValue = {
   orgId: string;
@@ -33,6 +29,19 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   const [orgId, setOrgId] = useState<string>("");
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [authReady, setAuthReady] = useState(false);
+
+  // Keep the velcoz_org cookie in sync with the active org + its role,
+  // so middleware can guard settings routes server-side without a backend round-trip.
+  useEffect(() => {
+    if (orgId && authReady) {
+      const current = orgs.find((o) => o.id === orgId);
+      if (current) {
+        setOrgCookie(orgId, current.role);
+      } else {
+        clearOrgCookie();
+      }
+    }
+  }, [orgId, orgs, authReady]);
 
   return (
     <OrgContext.Provider value={{ orgId, orgs, authReady, setOrgId, setOrgs, setAuthReady }}>
