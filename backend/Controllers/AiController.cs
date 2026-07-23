@@ -1,5 +1,9 @@
+using backend.Data;
+using backend.Models.Entities;
+using backend.Models.Enums;
 using backend.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 
 namespace backend.Controllers;
@@ -7,11 +11,12 @@ namespace backend.Controllers;
 [ApiController]
 [Route("api/ai")]
 [Authorize]
-public class AiController : ControllerBase
+public class AiController : TenantControllerBase
 {
     private readonly IOpenRouterService _openRouter;
 
-    public AiController(IOpenRouterService openRouter)
+    public AiController(AppDbContext db, UserManager<AppUser> userManager, IOpenRouterService openRouter)
+        : base(db, userManager)
     {
         _openRouter = openRouter;
     }
@@ -19,6 +24,16 @@ public class AiController : ControllerBase
     [HttpPost("chat")]
     public async Task<IActionResult> Chat([FromBody] AiChatRequest request)
     {
+        var orgId = await GetCurrentOrgIdAsync();
+        if (!orgId.HasValue) return Forbid();
+
+        var auth = await RequireOrgRoleAsync(RoleNames.Admin, RoleNames.SecurityAnalyst);
+        if (auth != null) return auth;
+
+        var org = await _db.Organizations.FindAsync(orgId.Value);
+        if (org == null || !org.IsAiEnabled)
+            return BadRequest(new { message = "AI features are not enabled for this organization." });
+
         if (string.IsNullOrWhiteSpace(request.Message))
             return BadRequest(new { message = "Message is required" });
 
