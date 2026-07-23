@@ -13,6 +13,7 @@ public interface INotificationService
     Task NotifyScanCompletedAsync(Guid organizationId, Guid jobId, string jobName, int processedAssets, int totalAssets, int newVulnerabilities, string? userId = null, CancellationToken ct = default);
     Task NotifyScanFailedAsync(Guid organizationId, Guid jobId, string jobName, string errorMessage, string? userId = null, CancellationToken ct = default);
     Task NotifyScheduleFailedAsync(Guid organizationId, Guid scheduleId, string scheduleName, string errorMessage, string? userId = null, CancellationToken ct = default);
+    Task NotifyPasswordResetRequestAsync(Guid organizationId, string requesterEmail, string? targetUserId = null, CancellationToken ct = default);
 }
 
 public class NotificationService : INotificationService
@@ -122,6 +123,28 @@ public class NotificationService : INotificationService
         await BroadcastAsync(notification);
 
         _logger.LogWarning("Notification: schedule failed for org {OrgId}", organizationId);
+    }
+
+    public async Task NotifyPasswordResetRequestAsync(Guid organizationId, string requesterEmail, string? targetUserId = null, CancellationToken ct = default)
+    {
+        var notification = new Notification
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = organizationId,
+            UserId = targetUserId,
+            Type = NotificationType.PasswordResetRequested,
+            Title = "Password reset requested",
+            Message = $"{requesterEmail} requested a password reset.",
+            Link = "/platform/users",
+            IsRead = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.Notifications.Add(notification);
+        await _db.SaveChangesAsync(ct);
+        await BroadcastAsync(notification);
+
+        _logger.LogInformation("Notification: password reset requested by {Email}", requesterEmail);
     }
 
     private async Task BroadcastAsync(Notification notification)

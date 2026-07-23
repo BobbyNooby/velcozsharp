@@ -5,5 +5,6 @@ public enum NotificationType
     CriticalVulnerabilityFound,
     ScanCompleted,
     ScanFailed,
-    ScheduleFailed
+    ScheduleFailed,
+    PasswordResetRequested
 }

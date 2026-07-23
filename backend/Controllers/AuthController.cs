@@ -18,13 +18,15 @@ public class AuthController : ControllerBase
     private readonly UserManager<AppUser> _userManager;
     private readonly SignInManager<AppUser> _signInManager;
     private readonly IAssetTypeTemplateService _templateService;
+    private readonly INotificationService _notifications;
 
-    public AuthController(AppDbContext db, UserManager<AppUser> userManager, SignInManager<AppUser> signInManager, IAssetTypeTemplateService templateService)
+    public AuthController(AppDbContext db, UserManager<AppUser> userManager, SignInManager<AppUser> signInManager, IAssetTypeTemplateService templateService, INotificationService notifications)
     {
         _db = db;
         _userManager = userManager;
         _signInManager = signInManager;
         _templateService = templateService;
+        _notifications = notifications;
     }
 
     [HttpPost("register")]
@@ -206,20 +208,36 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("forgot-password")]
-    public IActionResult ForgotPassword([FromBody] ForgotPasswordRequest request)
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
     {
-        // Email infrastructure is intentionally not implemented.
-        // In a production deployment, this should:
-        // 1. Find the user by email
-        // 2. Generate a reset token via _userManager.GeneratePasswordResetTokenAsync(user)
-        // 3. Send an email with IEmailSender / SMTP / SendGrid / Resend
-        // 4. Return a generic 200 even if the email doesn't exist (prevents user enumeration)
-        //
-        // For this self-hosted portfolio setup, platform admins reset passwords via /api/platform/users/{id}/reset-password.
-        return StatusCode(501, new
+        // Notify the user's organization admins so they can reset the password manually.
+        var user = await _userManager.FindByEmailAsync(request.Email);
+
+        if (user != null)
         {
-            message = "Email-based password reset is not configured. Contact your platform administrator to reset your password.",
-            adminResetEndpoint = "/api/platform/users/{userId}/reset-password"
+            var memberships = await _db.UserOrganizations
+                .Where(uo => uo.UserId == user.Id)
+                .Select(uo => uo.OrganizationId)
+                .ToListAsync();
+
+            foreach (var orgId in memberships)
+            {
+                var adminUserIds = await _db.UserOrganizations
+                    .Where(uo => uo.OrganizationId == orgId && uo.Role == RoleNames.Admin)
+                    .Select(uo => uo.UserId.ToString())
+                    .ToListAsync();
+
+                foreach (var adminId in adminUserIds)
+                {
+                    await _notifications.NotifyPasswordResetRequestAsync(orgId, request.Email, adminId);
+                }
+            }
+        }
+
+        // Always return a generic success message to prevent user enumeration.
+        return Ok(new
+        {
+            message = "If an account with that email exists, your organization's administrators have been notified to reset your password."
         });
     }
 }
