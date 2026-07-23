@@ -10,13 +10,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5038/api";
+
 export function ExportButton({ basePath, params }: { basePath: string; params?: Record<string, string> }) {
   const [format, setFormat] = useState("csv");
 
   const download = () => {
     const searchParams = new URLSearchParams(params ?? {});
     searchParams.set("format", format);
-    const url = `http://localhost:5038/api${basePath}?${searchParams.toString()}`;
+    const url = `${API_BASE}${basePath}?${searchParams.toString()}`;
     window.open(url, "_blank");
   };
 
