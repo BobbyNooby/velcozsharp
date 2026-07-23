@@ -230,6 +230,30 @@ public class PlatformController : ControllerBase
         return Ok(new ResetUserPasswordResponse { NewPassword = newPassword });
     }
 
+    [HttpPost("users/{userId:guid}/set-password")]
+    public async Task<IActionResult> SetUserPassword(Guid userId, [FromBody] SetUserPasswordRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+            return BadRequest(new { message = "New password must be at least 6 characters" });
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null) return NotFound();
+
+        var roles = await _userManager.GetRolesAsync(user);
+        if (roles.Contains(RoleNames.PlatformAdmin))
+            return BadRequest(new { message = "Set another platform admin's password manually via the database." });
+
+        var removeResult = await _userManager.RemovePasswordAsync(user);
+        if (!removeResult.Succeeded)
+            return BadRequest(new { message = string.Join(", ", removeResult.Errors.Select(e => e.Description)) });
+
+        var addResult = await _userManager.AddPasswordAsync(user, request.NewPassword);
+        if (!addResult.Succeeded)
+            return BadRequest(new { message = string.Join(", ", addResult.Errors.Select(e => e.Description)) });
+
+        return Ok(new { message = "Password set successfully" });
+    }
+
     [HttpPost("users/{userId:guid}/lock")]
     public async Task<IActionResult> LockUser(Guid userId)
     {

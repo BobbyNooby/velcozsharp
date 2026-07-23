@@ -47,3 +47,8 @@ public class ResetUserPasswordResponse
 {
     public string NewPassword { get; set; } = "";
 }
+
+public class SetUserPasswordRequest
+{
+    public string NewPassword { get; set; } = "";
+}
