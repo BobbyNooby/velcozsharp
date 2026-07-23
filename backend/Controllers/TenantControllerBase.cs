@@ -19,9 +19,9 @@ public abstract class TenantControllerBase : ControllerBase
     }
 
     /// <summary>
-    /// Reads X-Organization-Id header, validates user is a member of that org,
+    /// Reads X-Organization-Id header, validates user is a member of that org (or is a platform admin),
     /// sets _db.CurrentOrganizationId, and returns the org ID.
-    /// Returns null if header is missing or user is not a member.
+    /// Returns null if header is missing or user is not authorized.
     /// </summary>
     protected async Task<Guid?> GetCurrentOrgIdAsync()
     {
@@ -31,6 +31,13 @@ public abstract class TenantControllerBase : ControllerBase
 
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return null;
+
+        // Platform admins can access any organization.
+        if (await IsPlatformAdminAsync(user))
+        {
+            _db.CurrentOrganizationId = orgId;
+            return orgId;
+        }
 
         // Validate membership via UserOrganization join table
         var isMember = await _db.UserOrganizations
@@ -45,11 +52,15 @@ public abstract class TenantControllerBase : ControllerBase
 
     /// <summary>
     /// Gets the user's role within the specified organization.
+    /// Returns "Admin" for platform admins even if they are not a member.
     /// </summary>
     protected async Task<string?> GetUserOrgRoleAsync(Guid orgId)
     {
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return null;
+
+        if (await IsPlatformAdminAsync(user))
+            return RoleNames.Admin;
 
         return await _db.UserOrganizations
             .Where(uo => uo.UserId == user.Id && uo.OrganizationId == orgId)
@@ -87,5 +98,10 @@ public abstract class TenantControllerBase : ControllerBase
             return Forbid();
 
         return null;
+    }
+
+    private async Task<bool> IsPlatformAdminAsync(AppUser user)
+    {
+        return await _userManager.IsInRoleAsync(user, RoleNames.PlatformAdmin);
     }
 }

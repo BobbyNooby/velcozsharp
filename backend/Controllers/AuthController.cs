@@ -54,7 +54,10 @@ public class AuthController : ControllerBase
         if (!createResult.Succeeded)
             return BadRequest(new { message = string.Join(", ", createResult.Errors.Select(e => e.Description)) });
 
-        await _userManager.AddToRoleAsync(user, RoleNames.Admin);
+        // First user to register becomes the platform admin.
+        var isFirstUser = !await _db.Users.AnyAsync(u => u.Id != user.Id);
+        var assignedRole = isFirstUser ? RoleNames.PlatformAdmin : RoleNames.Admin;
+        await _userManager.AddToRoleAsync(user, assignedRole);
 
         // Create a personal organization for the new user
         var org = new Organization
@@ -86,7 +89,8 @@ public class AuthController : ControllerBase
             userId = user.Id,
             email = user.Email,
             displayName = user.DisplayName,
-            role = RoleNames.Admin,
+            role = assignedRole,
+            isPlatformAdmin = isFirstUser,
             organizationId = org.Id,
             organizationName = org.Name
         });
