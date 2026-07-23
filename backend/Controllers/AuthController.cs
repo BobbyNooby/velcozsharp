@@ -106,13 +106,15 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Invalid email or password" });
 
         var roles = await _userManager.GetRolesAsync(user);
+        var isPlatformAdmin = roles.Contains(RoleNames.PlatformAdmin);
 
         return Ok(new
         {
             userId = user.Id,
             email = user.Email,
             displayName = user.DisplayName,
-            role = roles.FirstOrDefault()
+            role = roles.FirstOrDefault(),
+            isPlatformAdmin
         });
     }
 
@@ -131,6 +133,7 @@ public class AuthController : ControllerBase
         if (user == null) return Unauthorized();
 
         var roles = await _userManager.GetRolesAsync(user);
+        var isPlatformAdmin = roles.Contains(RoleNames.PlatformAdmin);
 
         // Fetch all org memberships for this user
         var memberships = await _db.UserOrganizations
@@ -151,7 +154,68 @@ public class AuthController : ControllerBase
             email = user.Email,
             displayName = user.DisplayName,
             role = roles.FirstOrDefault(),
+            isPlatformAdmin,
             organizations = memberships
+        });
+    }
+
+    [Authorize]
+    [HttpPatch("me")]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
+    {
+        var user = await _userManager.GetUserAsync(User);
+        if (user == null) return Unauthorized();
+
+        if (!string.IsNullOrWhiteSpace(request.DisplayName))
+        {
+            user.DisplayName = request.DisplayName.Trim();
+            var result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+                return BadRequest(new { message = string.Join(", ", result.Errors.Select(e => e.Description)) });
+        }
+
+        return Ok(new
+        {
+            userId = user.Id,
+            email = user.Email,
+            displayName = user.DisplayName
+        });
+    }
+
+    [Authorize]
+    [HttpPost("change-password")]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
+            return BadRequest(new { message = "Current password and new password are required" });
+
+        var user = await _userManager.GetUserAsync(User);
+        if (user == null) return Unauthorized();
+
+        var result = await _userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
+        if (!result.Succeeded)
+            return BadRequest(new { message = string.Join(", ", result.Errors.Select(e => e.Description)) });
+
+        // Refresh the sign-in cookie so the session isn't invalidated
+        await _signInManager.RefreshSignInAsync(user);
+        return Ok(new { message = "Password changed successfully" });
+    }
+
+    [HttpPost("forgot-password")]
+    public IActionResult ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        // Email infrastructure is intentionally not implemented.
+        // In a production deployment, this should:
+        // 1. Find the user by email
+        // 2. Generate a reset token via _userManager.GeneratePasswordResetTokenAsync(user)
+        // 3. Send an email with IEmailSender / SMTP / SendGrid / Resend
+        // 4. Return a generic 200 even if the email doesn't exist (prevents user enumeration)
+        //
+        // For this self-hosted portfolio setup, platform admins reset passwords via /api/platform/users/{id}/reset-password.
+        return StatusCode(501, new
+        {
+            message = "Email-based password reset is not configured. Contact your platform administrator to reset your password.",
+            adminResetEndpoint = "/api/platform/users/{userId}/reset-password"
         });
     }
 }

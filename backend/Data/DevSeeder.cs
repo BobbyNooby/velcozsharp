@@ -15,10 +15,35 @@ public static class DevSeeder
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var templateService = scope.ServiceProvider.GetRequiredService<IAssetTypeTemplateService>();
 
-        // Only seed if admin doesn't exist
+        // Always ensure the platform admin exists, even on existing databases.
+        var platformAdminUser = await userManager.FindByEmailAsync("host@velcozsharp.local");
+        if (platformAdminUser == null)
+        {
+            platformAdminUser = new AppUser
+            {
+                Id = Guid.NewGuid(),
+                UserName = "host@velcozsharp.local",
+                Email = "host@velcozsharp.local",
+                DisplayName = "Platform Admin",
+                EmailConfirmed = true
+            };
+
+            var platformAdminResult = await userManager.CreateAsync(platformAdminUser, "password123");
+            if (platformAdminResult.Succeeded)
+            {
+                await userManager.AddToRoleAsync(platformAdminUser, backend.Models.Enums.RoleNames.PlatformAdmin);
+                Console.WriteLine($"🌱 Dev seeder: Created platform admin {platformAdminUser.Email} / password123");
+            }
+            else
+            {
+                Console.WriteLine($"   ❌ Failed to create platform admin: {string.Join(", ", platformAdminResult.Errors.Select(e => e.Description))}");
+            }
+        }
+
+        // Only seed the rest of the demo data if the regular admin doesn't exist
         if (await userManager.Users.AnyAsync(u => u.Email == "admin@test.com"))
         {
-            Console.WriteLine("🌱 Dev seeder: Data already exists, skipping.");
+            Console.WriteLine("🌱 Dev seeder: Demo data already exists, skipping.");
             return;
         }
 
@@ -118,5 +143,6 @@ public static class DevSeeder
         Console.WriteLine("🌱 Dev seeder: Done!");
         Console.WriteLine("   Login with any account + password: password123");
         Console.WriteLine("   Use X-Organization-Id header to scope requests to an org");
+        Console.WriteLine("   Platform admin login: host@velcozsharp.local / password123");
     }
 }

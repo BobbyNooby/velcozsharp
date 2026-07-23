@@ -127,9 +127,21 @@ using (var scope = app.Services.CreateScope())
             ? "✅ Database connection successful: PostgreSQL is reachable."
             : "❌ Database connection failed: CanConnect returned false.");
 
-        if (canConnect && app.Environment.IsDevelopment())
+        if (canConnect)
         {
-            await DevSeeder.SeedAsync(app.Services);
+            // Ensure the system-level PlatformAdmin role exists in Identity.
+            // This is separate from org-scoped roles (Admin/SecurityAnalyst/Viewer).
+            var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+            if (!await roleManager.RoleExistsAsync(backend.Models.Enums.RoleNames.PlatformAdmin))
+            {
+                await roleManager.CreateAsync(new IdentityRole<Guid>(backend.Models.Enums.RoleNames.PlatformAdmin));
+                Console.WriteLine("✅ PlatformAdmin role ensured.");
+            }
+
+            if (app.Environment.IsDevelopment())
+            {
+                await DevSeeder.SeedAsync(app.Services);
+            }
         }
     }
     catch (Exception ex)
@@ -137,6 +149,12 @@ using (var scope = app.Services.CreateScope())
         Console.WriteLine($"❌ Database connection error: {ex.Message}");
     }
 }
+
+// Email infrastructure stub note:
+// This project does not include an IEmailSender implementation. Password resets
+// are handled by platform admins via /api/platform/users/{userId}/reset-password.
+// To enable email-based flows (forgot password, email confirmation), register an
+// IEmailSender implementation such as SmtpEmailSender or SendGridEmailSender here.
 
 // Configure the HTTP request pipeline.
 app.UseMiddleware<ExceptionHandlingMiddleware>();
