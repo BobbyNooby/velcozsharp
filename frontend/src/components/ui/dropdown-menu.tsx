@@ -14,8 +14,30 @@ function DropdownMenuPortal({ ...props }: MenuPrimitive.Portal.Props) {
   return <MenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />
 }
 
-function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
-  return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />
+function DropdownMenuTrigger({
+  className,
+  asChild,
+  children,
+  ...props
+}: MenuPrimitive.Trigger.Props & {
+  asChild?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  const childElement = asChild ? React.Children.only(children) : null;
+  return (
+    <MenuPrimitive.Trigger
+      data-slot="dropdown-menu-trigger"
+      className={cn(
+        "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+        className
+      )}
+      {...props}
+      render={asChild ? (childElement as React.ReactElement) : undefined}
+    >
+      {asChild ? null : children}
+    </MenuPrimitive.Trigger>
+  );
 }
 
 function DropdownMenuContent({
@@ -77,11 +99,16 @@ function DropdownMenuItem({
   className,
   inset,
   variant = "default",
+  asChild,
+  children,
   ...props
 }: MenuPrimitive.Item.Props & {
-  inset?: boolean
-  variant?: "default" | "destructive"
+  inset?: boolean;
+  variant?: "default" | "destructive";
+  asChild?: boolean;
+  children?: React.ReactNode;
 }) {
+  const childElement = asChild ? React.Children.only(children) : null;
   return (
     <MenuPrimitive.Item
       data-slot="dropdown-menu-item"
@@ -92,8 +119,11 @@ function DropdownMenuItem({
         className
       )}
       {...props}
-    />
-  )
+      render={asChild ? (childElement as React.ReactElement) : undefined}
+    >
+      {asChild ? null : children}
+    </MenuPrimitive.Item>
+  );
 }
 
 function DropdownMenuSub({ ...props }: MenuPrimitive.SubmenuRoot.Props) {
