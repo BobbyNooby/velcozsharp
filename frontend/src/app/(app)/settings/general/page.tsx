@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/page-header";
 
 type OrgDetails = {
   id: string;
@@ -85,10 +86,10 @@ export default function GeneralSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">General Settings</h1>
-        <p className="text-sm text-muted-foreground">Manage your organization name and description.</p>
-      </div>
+      <PageHeader
+        title="General Settings"
+        description="Manage your organization name and description."
+      />
 
       <Card>
         <CardHeader>
@@ -116,7 +117,7 @@ export default function GeneralSettingsPage() {
               />
             </div>
             {message && (
-              <div className="text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded">{message}</div>
+              <div className="rounded-md bg-primary/10 px-3 py-2 text-sm text-primary">{message}</div>
             )}
             <Button type="submit" disabled={saving || !name.trim()}>
               {saving ? "Saving..." : "Save Changes"}
