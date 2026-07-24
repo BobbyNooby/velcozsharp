@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from "react";
 import { OrgProvider, useOrg, type Org } from "@/lib/api";
+import { clearOrgCookie } from "@/lib/org-cookie";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5038/api";
 
@@ -92,14 +93,16 @@ function AuthConsumer({ children }: { children: ReactNode }) {
     [mapMemberships, orgId, setOrgId, setOrgs]
   );
 
-  const fetchMe = useCallback(async () => {
+  const fetchMe = useCallback(async (signal?: AbortSignal) => {
     try {
       const res = await fetch(`${API_BASE}/auth/me`, {
         credentials: "include",
+        signal,
       });
       if (!res.ok) return null;
       return await res.json();
-    } catch {
+    } catch (err: any) {
+      if (err?.name === "AbortError") return null;
       return null;
     }
   }, []);
@@ -112,9 +115,10 @@ function AuthConsumer({ children }: { children: ReactNode }) {
   }, [applySession, fetchMe]);
 
   useEffect(() => {
+    const controller = new AbortController();
     mountedRef.current = true;
 
-    fetchMe()
+    fetchMe(controller.signal)
       .then((data) => {
         if (mountedRef.current) {
           applySession(data);
@@ -123,7 +127,8 @@ function AuthConsumer({ children }: { children: ReactNode }) {
           setIsLoading(false);
         }
       })
-      .catch(() => {
+      .catch((err: any) => {
+        if (err?.name === "AbortError") return;
         if (mountedRef.current) {
           setAuthReadyState(true);
           setAuthReady(true);
@@ -133,6 +138,7 @@ function AuthConsumer({ children }: { children: ReactNode }) {
 
     return () => {
       mountedRef.current = false;
+      controller.abort();
     };
   }, [applySession, fetchMe, setAuthReady]);
 
@@ -215,6 +221,7 @@ function AuthConsumer({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
+    clearOrgCookie();
     if (mountedRef.current) {
       setUser(null);
       setOrgs([]);

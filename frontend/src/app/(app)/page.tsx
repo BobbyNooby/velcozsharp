@@ -94,21 +94,27 @@ export default function DashboardPage() {
 
   // Refresh dashboard stats when active jobs complete
   useEffect(() => {
+    const controller = new AbortController();
     if (activeJobs.length === 0) {
       Promise.all([
-        apiFetch("/dashboard/stats"),
-        apiFetch("/dashboard/department-breakdown"),
-        apiFetch("/dashboard/asset-type-breakdown"),
-        apiFetch("/scan/jobs/summary"),
-      ]).then(async ([statsRes, deptRes, typeRes, jobsRes]) => {
-        if (!mountedRef.current) return;
-        if (statsRes.ok) setStats(await statsRes.json());
-        if (deptRes.ok) setDepartmentBreakdown(await deptRes.json());
-        if (typeRes.ok) setAssetTypeBreakdown(await typeRes.json());
-        if (jobsRes.ok) setJobSummary(await jobsRes.json());
-        setMessage("");
-      });
+        apiFetch("/dashboard/stats", { signal: controller.signal }),
+        apiFetch("/dashboard/department-breakdown", { signal: controller.signal }),
+        apiFetch("/dashboard/asset-type-breakdown", { signal: controller.signal }),
+        apiFetch("/scan/jobs/summary", { signal: controller.signal }),
+      ])
+        .then(async ([statsRes, deptRes, typeRes, jobsRes]) => {
+          if (!mountedRef.current) return;
+          if (statsRes.ok) setStats(await statsRes.json());
+          if (deptRes.ok) setDepartmentBreakdown(await deptRes.json());
+          if (typeRes.ok) setAssetTypeBreakdown(await typeRes.json());
+          if (jobsRes.ok) setJobSummary(await jobsRes.json());
+          setMessage("");
+        })
+        .catch((err: any) => {
+          if (err?.name === "AbortError") return;
+        });
     }
+    return () => controller.abort();
   }, [activeJobs.length, apiFetch]);
 
   if (loading || !authReady) {

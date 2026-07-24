@@ -54,10 +54,17 @@ export function useOrg() {
   return useContext(OrgContext);
 }
 
+function redirectToLogin() {
+  if (typeof window === "undefined") return;
+  const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+  window.location.href = `/login?returnTo=${returnTo}`;
+}
+
 /**
  * Stable API fetcher that reads orgId from context.
  * Returns a stable function reference (memoized) so it can safely be used in useEffect deps.
  * Supports AbortSignal for cancellation.
+ * Redirects to /login on 401 so every consumer does not have to handle session expiry.
  */
 export function useApiFetch() {
   const { orgId } = useOrg();
@@ -70,81 +77,13 @@ export function useApiFetch() {
       };
       if (orgId) headers["X-Organization-Id"] = orgId;
       const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
+      if (res.status === 401) {
+        redirectToLogin();
+      }
       return res;
     },
     [orgId]
   );
-}
-
-/**
- * Fetch /auth/me once, populate org context, and return user data.
- * Uses authReady state (not a ref) so React Strict Mode remounts work correctly.
- */
-export function useAuthSession() {
-  const { orgId, orgs, authReady, setOrgId, setOrgs, setAuthReady } = useOrg();
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (authReady) return; // already initialized
-
-    let cancelled = false;
-
-    fetch(`${API_BASE}/auth/me`, { credentials: "include" })
-      .then((res) => {
-        if (!res.ok) {
-          console.warn(`[Auth] /auth/me returned ${res.status} ${res.statusText}`);
-          return null;
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (cancelled) return;
-        if (data) {
-          console.log("[Auth] Session loaded:", data.email, data.role);
-          setUser(data);
-          if (data.organizations?.length > 0) {
-            const mapped = data.organizations.map((o: any) => ({
-              id: o.organizationId,
-              name: o.organizationName,
-              role: o.role,
-              isDefault: o.isDefault,
-            }));
-            setOrgs(mapped);
-            if (!orgId) {
-              const def = mapped.find((o: Org) => o.isDefault);
-              if (def) setOrgId(def.id);
-            }
-          }
-        } else {
-          console.log("[Auth] No active session");
-        }
-      })
-      .catch((err) => {
-        console.error("[Auth] /auth/me fetch failed:", err);
-        if (err instanceof TypeError) {
-          console.error(
-            `[Auth] Cannot reach backend at ${API_BASE}. Possible causes:\n` +
-            `1. Backend is not running on ${API_BASE}\n` +
-            `2. CORS blocked the request\n` +
-            `3. Page loaded over HTTPS but backend is HTTP (mixed content)\n` +
-            `Set NEXT_PUBLIC_API_URL env var if backend runs elsewhere.`
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-          setAuthReady(true);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authReady, orgId, setOrgId, setOrgs, setAuthReady]);
-
-  return { user, loading, orgId, orgs, authReady, setOrgId };
 }
 
 /**

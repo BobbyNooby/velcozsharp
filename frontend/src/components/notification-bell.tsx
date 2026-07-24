@@ -38,12 +38,12 @@ export default function NotificationBell() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async (signal?: AbortSignal) => {
     if (!orgId) return;
     try {
       const [countRes, listRes] = await Promise.all([
-        apiFetch("/notifications/unread-count"),
-        apiFetch("/notifications?pageSize=5"),
+        apiFetch("/notifications/unread-count", { signal }),
+        apiFetch("/notifications?pageSize=5", { signal }),
       ]);
       if (countRes.ok && mountedRef.current) {
         const c = await countRes.json();
@@ -53,20 +53,24 @@ export default function NotificationBell() {
         const data = await listRes.json();
         setRecent(data.items ?? []);
       }
-    } catch {}
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+    }
   };
 
   useEffect(() => {
-    if (!authReady) return;
-    fetchData();
-    const interval = setInterval(fetchData, 30000); // fallback polling every 30s
+    const controller = new AbortController();
+    if (!authReady) return () => controller.abort();
+    fetchData(controller.signal);
+    const interval = setInterval(() => fetchData(controller.signal), 30000); // fallback polling every 30s
 
-    const handleRealtime = () => fetchData();
+    const handleRealtime = () => fetchData(controller.signal);
     window.addEventListener("velcoz:notification", handleRealtime);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener("velcoz:notification", handleRealtime);
+      controller.abort();
     };
   }, [orgId, apiFetch, authReady]);
 
@@ -75,7 +79,9 @@ export default function NotificationBell() {
     try {
       await apiFetch(`/notifications/${id}/read`, { method: "PATCH" });
       fetchData();
-    } catch {}
+    } catch (err) {
+      console.error("[notification-bell] mark read failed", err);
+    }
   };
 
   const markAllRead = async (e: React.MouseEvent) => {
@@ -83,7 +89,9 @@ export default function NotificationBell() {
     try {
       await apiFetch("/notifications/mark-all-read", { method: "POST" });
       fetchData();
-    } catch {}
+    } catch (err) {
+      console.error("[notification-bell] mark all read failed", err);
+    }
   };
 
   const onClickNotification = (n: Notification) => {

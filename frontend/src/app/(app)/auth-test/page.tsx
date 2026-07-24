@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import AuthTestClient from "./AuthTestClient";
 
-const API = "http://localhost:5038/api";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5038/api";
 
 async function fetchWithAuth(path: string, cookieHeader: string, orgId?: string) {
   try {

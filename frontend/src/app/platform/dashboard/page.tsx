@@ -24,18 +24,24 @@ export default function PlatformDashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const controller = new AbortController();
     mountedRef.current = true;
     setLoading(true);
-    apiFetch("/platform/stats")
+    apiFetch("/platform/stats", { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok || !mountedRef.current) return;
         setStats(await res.json());
       })
-      .catch(() => {})
+      .catch((err: any) => {
+        if (err?.name === "AbortError") return;
+      })
       .finally(() => {
         if (mountedRef.current) setLoading(false);
       });
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      controller.abort();
+    };
   }, [apiFetch]);
 
   const cards = stats

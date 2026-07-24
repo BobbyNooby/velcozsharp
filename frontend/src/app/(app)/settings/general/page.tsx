@@ -32,9 +32,10 @@ export default function GeneralSettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (!orgId) return;
+    const controller = new AbortController();
+    if (!orgId) return () => controller.abort();
     setLoading(true);
-    apiFetch(`/organizations/${orgId}`)
+    apiFetch(`/organizations/${orgId}`, { signal: controller.signal })
       .then(async (res) => {
         if (res.ok && mountedRef.current) {
           const data = await res.json();
@@ -43,10 +44,13 @@ export default function GeneralSettingsPage() {
           setDescription(data.description ?? "");
         }
       })
-      .catch(() => {})
+      .catch((err: any) => {
+        if (err?.name === "AbortError") return;
+      })
       .finally(() => {
         if (mountedRef.current) setLoading(false);
       });
+    return () => controller.abort();
   }, [orgId, apiFetch]);
 
   const handleSubmit = async (e: React.FormEvent) => {
