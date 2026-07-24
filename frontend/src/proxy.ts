@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { ROUTE_ROLES } from "./lib/route-roles";
 
 const AUTH_COOKIE = "velcoz_auth";
 const ORG_COOKIE = "velcoz_org";
@@ -19,17 +20,6 @@ function isPublic(path: string) {
   return false;
 }
 
-/**
- * Settings routes that require a particular org-role. Reads velcoz_org cookie (format: orgId:role).
- */
-const SETTINGS_ROUTE_ROLES: Record<string, string[]> = {
-  "/settings/ai": ["Admin"],
-  "/settings/members": ["Admin"],
-  "/settings/scan-schedules": ["Admin", "SecurityAnalyst"],
-  "/settings/departments": ["Admin", "SecurityAnalyst"],
-  "/settings/asset-types": ["Admin", "SecurityAnalyst"],
-};
-
 function getOrgRole(cookieHeader: string): string | null {
   const parts = cookieHeader.split(";");
   for (const raw of parts) {
@@ -45,7 +35,7 @@ function getOrgRole(cookieHeader: string): string | null {
   return null;
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasAuthCookie = request.cookies.has(AUTH_COOKIE);
 
@@ -79,17 +69,18 @@ export async function middleware(request: NextRequest) {
       if (!user.isPlatformAdmin) {
         return NextResponse.redirect(new URL("/", request.url));
       }
-    } catch {
+    } catch (err) {
+      console.error("[proxy] platform admin check failed", err);
       return NextResponse.redirect(new URL("/login", request.url));
     }
   }
 
-  // Settings routes that require an elevated org-role.
-  if (pathname in SETTINGS_ROUTE_ROLES) {
-    const allowed = SETTINGS_ROUTE_ROLES[pathname];
+  // Routes that require an elevated org-role.
+  const guarded = ROUTE_ROLES[pathname];
+  if (guarded) {
     const role = getOrgRole(request.headers.get("cookie") || "");
-    if (!role || !allowed.includes(role)) {
-      return NextResponse.redirect(new URL("/settings", request.url));
+    if (!role || !guarded.roles.includes(role)) {
+      return NextResponse.redirect(new URL(guarded.redirectTo, request.url));
     }
   }
 

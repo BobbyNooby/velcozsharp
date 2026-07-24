@@ -8,6 +8,7 @@ import {
   FileText,
   UserCircle,
 } from "lucide-react";
+import { SETTINGS_ROUTE_ROLES } from "./route-roles";
 
 export type NavItem = {
   href: string;
@@ -36,13 +37,6 @@ export function filterNavByRole(items: NavItem[], role: string): NavItem[] {
 
 /**
  * Settings routes that require an elevated org-role.
- * Middleware reads the velcoz_org cookie and blocks mismatches server-side.
- * Excludes the auth-cookie-only check (which is platform admin, handled separately).
+ * Re-exported from route-roles.ts to keep the single source of truth.
  */
-export const SETTINGS_ROUTE_ROLES: Record<string, string[]> = {
-  "/settings/ai": ["Admin"],
-  "/settings/members": ["Admin"],
-  "/settings/scan-schedules": ["Admin", "SecurityAnalyst"],
-  "/settings/departments": ["Admin", "SecurityAnalyst"],
-  "/settings/asset-types": ["Admin", "SecurityAnalyst"],
-};
+export { SETTINGS_ROUTE_ROLES };

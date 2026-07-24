@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { useOrg } from "@/lib/api";
-import { settingsNavItems, filterNavByRole, SETTINGS_ROUTE_ROLES } from "@/lib/nav";
+import { settingsNavItems, filterNavByRole } from "@/lib/nav";
+import { SETTINGS_ROUTE_ROLES } from "@/lib/route-roles";
 import { RouteGuard } from "@/components/route-guard";
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
