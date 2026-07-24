@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Brain, Info } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 
 type AiSettings = {
   id: string;
@@ -38,9 +39,10 @@ export default function AiSettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (!orgId) return;
+    const controller = new AbortController();
+    if (!orgId) return () => controller.abort();
     setLoading(true);
-    apiFetch(`/organizations/${orgId}`)
+    apiFetch(`/organizations/${orgId}`, { signal: controller.signal })
       .then(async (res) => {
         if (res.ok && mountedRef.current) {
           const data = await res.json();
@@ -51,10 +53,13 @@ export default function AiSettingsPage() {
           setMinScore(data.aiMinScore ?? 0);
         }
       })
-      .catch(() => {})
+      .catch((err: any) => {
+        if (err?.name === "AbortError") return;
+      })
       .finally(() => {
         if (mountedRef.current) setLoading(false);
       });
+    return () => controller.abort();
   }, [orgId, apiFetch]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -100,13 +105,10 @@ export default function AiSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Brain className="w-6 h-6" />
-          AI Settings
-        </h1>
-        <p className="text-sm text-muted-foreground">Configure how the AI deep scan pipeline behaves.</p>
-      </div>
+      <PageHeader
+        title={<><Brain className="w-6 h-6" /> AI Settings</>}
+        description="Configure how the AI deep scan pipeline behaves."
+      />
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>

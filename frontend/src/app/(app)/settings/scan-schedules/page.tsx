@@ -3,9 +3,19 @@
 import { useState, useEffect, useRef } from "react";
 import { useOrg, useApiFetch } from "@/lib/api";
 import { ExportButton } from "@/components/export-button";
+import { Pagination } from "@/components/pagination";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/page-header";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type ScanSchedule = {
   id: string;
@@ -58,26 +68,30 @@ export default function ScanSchedulesPage() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const fetchSchedules = async () => {
+  const fetchSchedules = async (signal?: AbortSignal) => {
     if (!orgId) return;
     setLoading(true);
     try {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("pageSize", String(pageSize));
-      const res = await apiFetch(`/scan-schedules?${params.toString()}`);
+      const res = await apiFetch(`/scan-schedules?${params.toString()}`, { signal });
       if (res.ok && mountedRef.current) {
         const data = await res.json();
         setSchedules(data.items ?? []);
         setTotalCount(data.totalCount ?? 0);
       }
-    } catch {} finally {
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+    } finally {
       if (mountedRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchSchedules();
+    const controller = new AbortController();
+    fetchSchedules(controller.signal);
+    return () => controller.abort();
   }, [orgId, apiFetch, page, pageSize]);
 
   const resetForm = () => {
@@ -172,16 +186,16 @@ export default function ScanSchedulesPage() {
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Scan Schedules</h1>
-          <p className="text-sm text-gray-600">Configure recurring scans</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <ExportButton basePath="/export/scan-jobs" />
-          <Button onClick={() => { resetForm(); setShowForm(true); }}>New Schedule</Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Scan Schedules"
+        description="Configure recurring scans"
+        actions={
+          <>
+            <ExportButton basePath="/export/scan-jobs" />
+            <Button onClick={() => { resetForm(); setShowForm(true); }}>New Schedule</Button>
+          </>
+        }
+      />
 
       {message && (
         <div className="bg-blue-50 text-blue-700 px-3 py-2 rounded text-sm">{message}</div>
@@ -195,31 +209,29 @@ export default function ScanSchedulesPage() {
           <CardContent className="space-y-3">
             <div>
               <label className="text-sm font-medium">Name</label>
-              <input
-                type="text"
+              <Input
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
-                className="border rounded px-2 py-1 text-sm w-full"
                 placeholder="Daily Production Scan"
               />
             </div>
             <div>
               <label className="text-sm font-medium">Frequency</label>
-              <select
-                value={formPreset}
-                onChange={(e) => onPresetChange(e.target.value)}
-                className="border rounded px-2 py-1 text-sm w-full"
-              >
-                {CRON_PRESETS.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
+              <Select value={formPreset} onValueChange={(v) => onPresetChange(v ?? "custom")}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CRON_PRESETS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {formPreset === "custom" && (
-                <input
-                  type="text"
+                <Input
                   value={formCron}
                   onChange={(e) => setFormCron(e.target.value)}
-                  className="border rounded px-2 py-1 text-sm w-full mt-1 font-mono"
+                  className="mt-1 font-mono"
                   placeholder="0 2 * * *"
                 />
               )}
@@ -230,13 +242,12 @@ export default function ScanSchedulesPage() {
             </div>
             <div>
               <label className="text-sm font-medium">Scope</label>
-              <input
-                type="text"
+              <Input
                 value="All Assets"
                 disabled
-                className="border rounded px-2 py-1 text-sm w-full bg-gray-50 text-gray-500"
+                className="bg-gray-50 text-gray-500"
               />
-              <input type="hidden" value="All" />
+              <Input type="hidden" value="All" />
             </div>
             <div className="flex gap-2">
               <Button onClick={save}>{editId ? "Update" : "Create"}</Button>
@@ -301,22 +312,17 @@ export default function ScanSchedulesPage() {
             Showing {schedules.length} of {totalCount} schedules
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
-              Previous
-            </Button>
-            <span className="text-sm">Page {page} of {totalPages}</span>
-            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-              Next
-            </Button>
-            <select
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              className="border rounded px-2 py-1 text-sm"
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-            </select>
+            <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
+              <SelectTrigger className="w-[80px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       )}

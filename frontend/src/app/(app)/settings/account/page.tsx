@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, UserCircle, KeyRound, Check } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 
 export default function AccountSettingsPage() {
   const { user, refreshUser } = useAuth();
@@ -93,13 +94,10 @@ export default function AccountSettingsPage() {
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <UserCircle className="size-6" />
-          Account
-        </h1>
-        <p className="text-sm text-muted-foreground">Manage your profile and security.</p>
-      </div>
+      <PageHeader
+        title={<><UserCircle className="size-6" /> Account</>}
+        description="Manage your profile and security."
+      />
 
       <Card>
         <CardHeader>

@@ -2,17 +2,15 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Settings } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 
 export default function PlatformSettingsPage() {
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Settings className="size-6" />
-          Instance Settings
-        </h1>
-        <p className="text-sm text-muted-foreground">Global platform configuration.</p>
-      </div>
+      <PageHeader
+        title={<><Settings className="size-6" /> Instance Settings</>}
+        description="Global platform configuration."
+      />
 
       <Card>
         <CardHeader>

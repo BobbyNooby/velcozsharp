@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useTransition } from "react";
 import { useApiFetch, useDebounce } from "@/lib/api";
+import { Pagination } from "@/components/pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ import {
 import { TableSkeleton } from "@/components/skeletons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, Users, Lock, Unlock, KeyRound } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 
 type PlatformUser = {
   id: string;
@@ -63,7 +65,7 @@ export default function PlatformUsersPage() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (signal?: AbortSignal) => {
     setLoading(true);
     const params = new URLSearchParams();
     params.set("page", String(page));
@@ -71,20 +73,22 @@ export default function PlatformUsersPage() {
     if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
 
     try {
-      const res = await apiFetch(`/platform/users?${params.toString()}`);
+      const res = await apiFetch(`/platform/users?${params.toString()}`, { signal });
       if (!res.ok || !mountedRef.current) return;
       const data = await res.json();
       setUsers(data.items || []);
       setTotalCount(data.totalCount || 0);
-    } catch {
-      // ignore
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
     } finally {
       if (mountedRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchUsers();
+    const controller = new AbortController();
+    fetchUsers(controller.signal);
+    return () => controller.abort();
   }, [apiFetch, page, pageSize, debouncedSearch]);
 
   const runAction = async (action: () => Promise<Response>, successMessage: string) => {
@@ -128,13 +132,10 @@ export default function PlatformUsersPage() {
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Users className="size-6" />
-          Users
-        </h1>
-        <p className="text-sm text-muted-foreground">Manage all users on the platform.</p>
-      </div>
+      <PageHeader
+        title={<><Users className="size-6" /> Users</>}
+        description="Manage all users on the platform."
+      />
 
       {message && (
         <Alert className={message.includes("failed") || message.includes("error") ? "border-destructive" : ""}>
@@ -257,13 +258,7 @@ export default function PlatformUsersPage() {
           Showing {users.length} of {totalCount} users
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
-            Previous
-          </Button>
-          <span className="text-sm">Page {page} of {totalPages}</span>
-          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-            Next
-          </Button>
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
           <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
             <SelectTrigger className="w-[100px] h-8">
               <SelectValue />

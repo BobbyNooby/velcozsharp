@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useApiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/page-header";
 
 export default function AiChatPage() {
   const apiFetch = useApiFetch();
@@ -47,12 +48,14 @@ export default function AiChatPage() {
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">AI Chat Demo</h1>
-        <p className="text-sm text-gray-500">
-          Test the OpenRouter connection. Default model: <code className="bg-gray-100 px-1 rounded">deepseek/deepseek-v4-flash</code>.
-        </p>
-      </div>
+      <PageHeader
+        title="AI Chat Demo"
+        description={
+          <>
+            Test the OpenRouter connection. Default model: <code className="bg-gray-100 px-1 rounded">deepseek/deepseek-v4-flash</code>.
+          </>
+        }
+      />
 
       {error && (
         <div className="bg-red-50 text-red-700 px-3 py-2 rounded text-sm">{error}</div>

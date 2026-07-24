@@ -4,6 +4,9 @@ import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/page-header";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5038/api";
 
 export default function HealthPage() {
   const [status, setStatus] = useState<"healthy" | "unhealthy" | "loading">("loading");
@@ -12,18 +15,20 @@ export default function HealthPage() {
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchHealth = async () => {
+  const fetchHealth = async (signal?: AbortSignal) => {
     setStatus("loading");
     setError(null);
     try {
-      const res = await fetch("http://localhost:5038/api/health", {
+      const res = await fetch(`${API_BASE}/health`, {
         credentials: "include",
+        signal,
       });
       const data = await res.json();
       setChecks(data.checks ?? {});
       setStatus(data.status === "healthy" ? "healthy" : "unhealthy");
       setLastChecked(new Date());
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
       setStatus("unhealthy");
       setError("Failed to reach backend");
       setChecks({});
@@ -31,24 +36,26 @@ export default function HealthPage() {
   };
 
   useEffect(() => {
-    fetchHealth();
-    intervalRef.current = setInterval(fetchHealth, 5000);
+    const controller = new AbortController();
+    fetchHealth(controller.signal);
+    intervalRef.current = setInterval(() => fetchHealth(controller.signal), 5000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      controller.abort();
     };
   }, []);
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold">Backend Health</h1>
-          <p className="text-sm text-muted-foreground">Polls the backend health endpoint every 5 seconds</p>
-        </div>
-        <Button onClick={fetchHealth} variant="outline">
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        title="Backend Health"
+        description="Polls the backend health endpoint every 5 seconds"
+        actions={
+          <Button onClick={() => fetchHealth()} variant="outline">
+            Refresh
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>

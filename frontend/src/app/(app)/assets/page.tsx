@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useOrg, useApiFetch, useDebounce } from "@/lib/api";
+import { severityColor, criticalityColor, CriticalityBadge } from "@/lib/severity";
 import { ExportButton } from "@/components/export-button";
+import { Pagination } from "@/components/pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/page-header";
 
 type Asset = {
   id: string;
@@ -43,20 +46,6 @@ type Asset = {
 type TagOption = { id: string; name: string };
 
 type Option = { id: string; name: string };
-
-const severityColors: Record<string, string> = {
-  CRITICAL: "bg-red-100 text-red-700 hover:bg-red-100",
-  HIGH: "bg-orange-100 text-orange-700 hover:bg-orange-100",
-  MEDIUM: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100",
-  LOW: "bg-blue-100 text-blue-700 hover:bg-blue-100",
-};
-
-const criticalityColors: Record<string, string> = {
-  Critical: "bg-red-100 text-red-700 hover:bg-red-100",
-  High: "bg-orange-100 text-orange-700 hover:bg-orange-100",
-  Medium: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100",
-  Low: "bg-blue-100 text-blue-700 hover:bg-blue-100",
-};
 
 export default function AssetsPage() {
   const { orgId, authReady } = useOrg();
@@ -168,27 +157,29 @@ export default function AssetsPage() {
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Assets</h1>
-        <div className="flex items-center gap-2">
-          <ExportButton
-            basePath="/export/assets"
-            params={{
-              ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-              ...(statusFilter && statusFilter !== " " ? { status: statusFilter } : {}),
-              ...(assetTypeFilter && assetTypeFilter !== " " ? { assetTypeId: assetTypeFilter } : {}),
-              ...(departmentFilter && departmentFilter !== " " ? { departmentId: departmentFilter } : {}),
-              ...(severityFilter && severityFilter !== " " ? { severity: severityFilter } : {}),
-              ...(criticalityFilter && criticalityFilter !== " " ? { criticality: criticalityFilter } : {}),
-              ...(tagFilter && tagFilter !== " " ? { tag: tagFilter } : {}),
-              ...(hasVulnsFilter && hasVulnsFilter !== " " ? { hasVulnerabilities: hasVulnsFilter } : {}),
-            }}
-          />
-          <Button>
-            <Link href="/cve-mapping">Go to Dashboard</Link>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Assets"
+        actions={
+          <>
+            <ExportButton
+              basePath="/export/assets"
+              params={{
+                ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+                ...(statusFilter && statusFilter !== " " ? { status: statusFilter } : {}),
+                ...(assetTypeFilter && assetTypeFilter !== " " ? { assetTypeId: assetTypeFilter } : {}),
+                ...(departmentFilter && departmentFilter !== " " ? { departmentId: departmentFilter } : {}),
+                ...(severityFilter && severityFilter !== " " ? { severity: severityFilter } : {}),
+                ...(criticalityFilter && criticalityFilter !== " " ? { criticality: criticalityFilter } : {}),
+                ...(tagFilter && tagFilter !== " " ? { tag: tagFilter } : {}),
+                ...(hasVulnsFilter && hasVulnsFilter !== " " ? { hasVulnerabilities: hasVulnsFilter } : {}),
+              }}
+            />
+            <Button>
+              <Link href="/cve-mapping">Go to Dashboard</Link>
+            </Button>
+          </>
+        }
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -375,10 +366,7 @@ export default function AssetsPage() {
                   <Badge variant="secondary">{asset.status}</Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge className={criticalityColors[asset.criticality] ?? ""}>
-                    {asset.criticality}
-                    {asset.isCriticalityAuto && <span className="ml-1 text-[10px] opacity-70">auto</span>}
-                  </Badge>
+                  <CriticalityBadge criticality={asset.criticality} isAuto={asset.isCriticalityAuto} />
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
@@ -399,7 +387,7 @@ export default function AssetsPage() {
                 </TableCell>
                 <TableCell>
                   {asset.highestSeverity ? (
-                    <Badge className={severityColors[asset.highestSeverity.toUpperCase()] ?? ""}>
+                    <Badge className={severityColor(asset.highestSeverity)}>
                       {asset.highestSeverity} {asset.highestCvssScore}
                     </Badge>
                   ) : (
@@ -426,15 +414,7 @@ export default function AssetsPage() {
           Showing {assets.length} of {totalCount} assets
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
-            Previous
-          </Button>
-          <span className="text-sm">
-            Page {page} of {totalPages}
-          </span>
-          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-            Next
-          </Button>
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
           <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
             <SelectTrigger className="w-[100px] h-8">
               <SelectValue />

@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useOrg, useApiFetch } from "@/lib/api";
+import { Pagination } from "@/components/pagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/page-header";
 
 type Notification = {
   id: string;
@@ -28,32 +30,39 @@ export default function NotificationsPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 20;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 
-  const fetchNotifications = async (p = page) => {
+  const fetchNotifications = async (p = page, signal?: AbortSignal) => {
     if (!orgId) return;
     setLoading(true);
     try {
-      const res = await apiFetch(`/notifications?page=${p}&pageSize=${pageSize}`);
+      const res = await apiFetch(`/notifications?page=${p}&pageSize=${pageSize}`, { signal });
       if (res.ok && mountedRef.current) {
         const data = await res.json();
         setNotifications(data.items ?? []);
         setTotal(data.total ?? 0);
       }
-    } catch {} finally {
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+    } finally {
       if (mountedRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (authReady) fetchNotifications();
-    const handleRealtime = () => fetchNotifications();
+    const controller = new AbortController();
+    if (authReady) fetchNotifications(page, controller.signal);
+    const handleRealtime = () => fetchNotifications(page, controller.signal);
     window.addEventListener("velcoz:notification", handleRealtime);
-    return () => window.removeEventListener("velcoz:notification", handleRealtime);
+    return () => {
+      window.removeEventListener("velcoz:notification", handleRealtime);
+      controller.abort();
+    };
   }, [orgId, apiFetch, authReady, page]);
 
   const markRead = async (id: string) => {
@@ -79,13 +88,11 @@ export default function NotificationsPage() {
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Notifications</h1>
-          <p className="text-sm text-gray-600">Stay on top of critical CVEs and scan activity</p>
-        </div>
-        <Button variant="outline" onClick={markAllRead}>Mark all read</Button>
-      </div>
+      <PageHeader
+        title="Notifications"
+        description="Stay on top of critical CVEs and scan activity"
+        actions={<Button variant="outline" onClick={markAllRead}>Mark all read</Button>}
+      />
 
       {loading ? (
         <div className="text-gray-500">Loading...</div>
@@ -137,24 +144,8 @@ export default function NotificationsPage() {
           ))}
 
           {total > pageSize && (
-            <div className="flex justify-between items-center pt-4">
-              <Button
-                variant="outline"
-                disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-              >
-                Previous
-              </Button>
-              <span className="text-sm text-gray-600">
-                Page {page} of {Math.ceil(total / pageSize)}
-              </span>
-              <Button
-                variant="outline"
-                disabled={page >= Math.ceil(total / pageSize)}
-                onClick={() => setPage(page + 1)}
-              >
-                Next
-              </Button>
+            <div className="flex justify-center items-center pt-4">
+              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
             </div>
           )}
         </div>

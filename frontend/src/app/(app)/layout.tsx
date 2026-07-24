@@ -8,6 +8,7 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/s
 import { AppSidebar } from "@/components/app-sidebar";
 import { DashboardSkeleton } from "@/components/skeletons";
 import NotificationBell from "@/components/notification-bell";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Separator } from "@/components/ui/separator";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -73,6 +74,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Separator orientation="vertical" className="hidden h-6 sm:block" />
             <OrgContextChip />
             <div className="flex flex-1 items-center justify-end gap-4">
+              <ThemeToggle />
               <NotificationBell />
             </div>
           </header>

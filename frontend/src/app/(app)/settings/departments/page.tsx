@@ -2,9 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useOrg, useApiFetch, useDebounce } from "@/lib/api";
+import { Pagination } from "@/components/pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -14,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RotateCcw } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 
 type Department = {
   id: string;
@@ -44,7 +55,7 @@ export default function DepartmentsPage() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = async (signal?: AbortSignal) => {
     if (!orgId) return;
     setLoading(true);
     try {
@@ -53,19 +64,23 @@ export default function DepartmentsPage() {
       params.set("pageSize", String(pageSize));
       if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
       if (showInactive) params.set("includeInactive", "true");
-      const res = await apiFetch(`/departments?${params.toString()}`);
+      const res = await apiFetch(`/departments?${params.toString()}`, { signal });
       if (res.ok && mountedRef.current) {
         const data = await res.json();
         setDepartments(data.items ?? []);
         setTotalCount(data.totalCount ?? 0);
       }
-    } catch {} finally {
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+    } finally {
       if (mountedRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDepartments();
+    const controller = new AbortController();
+    fetchDepartments(controller.signal);
+    return () => controller.abort();
   }, [orgId, apiFetch, page, pageSize, debouncedSearch, showInactive]);
 
   const reactivate = async (id: string) => {
@@ -83,12 +98,10 @@ export default function DepartmentsPage() {
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold">Departments</h1>
-          <p className="text-sm text-muted-foreground">Manage organization departments</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Departments"
+        description="Manage organization departments"
+      />
 
       {message && <div className="bg-blue-50 text-blue-700 px-3 py-2 rounded text-sm">{message}</div>}
 
@@ -96,10 +109,10 @@ export default function DepartmentsPage() {
         <div className="flex-1 min-w-[200px]">
           <Input placeholder="Search departments..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }} />
-          Show inactive
-        </label>
+        <div className="flex items-center gap-2">
+          <Checkbox id="showInactive" checked={showInactive} onCheckedChange={(checked) => { setShowInactive(checked === true); setPage(1); }} />
+          <Label htmlFor="showInactive" className="text-sm font-normal cursor-pointer">Show inactive</Label>
+        </div>
       </div>
 
       <Card>
@@ -143,14 +156,17 @@ export default function DepartmentsPage() {
       <div className="flex items-center justify-between">
         <div className="text-sm text-muted-foreground">Showing {departments.length} of {totalCount}</div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Previous</Button>
-          <span className="text-sm">Page {page} of {totalPages}</span>
-          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</Button>
-          <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="border rounded px-2 py-1 text-sm">
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-            <option value={50}>50</option>
-          </select>
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+          <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
+            <SelectTrigger className="w-[80px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="20">20</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </div>

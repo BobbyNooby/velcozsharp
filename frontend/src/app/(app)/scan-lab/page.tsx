@@ -8,6 +8,7 @@ import { useSignalR } from "@/lib/signalr";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/page-header";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import {
@@ -101,13 +102,19 @@ export default function ScanLabPage() {
 
   // Fetch assets
   useEffect(() => {
-    if (!orgId) return;
-    apiFetch("/assets?pageSize=200").then(async (res) => {
-      if (res.ok && mountedRef.current) {
-        const data = await res.json();
-        setAssets(data.items ?? []);
-      }
-    });
+    const controller = new AbortController();
+    if (!orgId) return () => controller.abort();
+    apiFetch("/assets?pageSize=200", { signal: controller.signal })
+      .then(async (res) => {
+        if (res.ok && mountedRef.current) {
+          const data = await res.json();
+          setAssets(data.items ?? []);
+        }
+      })
+      .catch((err: any) => {
+        if (err?.name === "AbortError") return;
+      });
+    return () => controller.abort();
   }, [orgId, apiFetch]);
 
   // Listen to SignalR ScanProgress events
@@ -309,44 +316,42 @@ export default function ScanLabPage() {
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-start flex-wrap gap-4">
-        <div>
+      <PageHeader
+        title={
           <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold">Scan Lab</h1>
+            Scan Lab
             <Badge variant="outline" className="gap-1">
               <Radio className="w-3 h-3" />
               {connected ? "SignalR live" : "polling"}
             </Badge>
           </div>
-          <p className="text-sm text-gray-600">
-            Watch scans progress in real-time. AI deep scans use LLM keyword + scoring; fast scans use regex.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 bg-muted p-1 rounded-lg">
-          <button
-            onClick={() => setUseAi(false)}
-            className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-              !useAi ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Zap className="w-4 h-4" />
-            Fast Regex
-          </button>
-          <button
-            onClick={() => setUseAi(true)}
-            className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-              useAi ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Brain className="w-4 h-4" />
-            AI Deep
-          </button>
-        </div>
-      </div>
+        }
+        description="Watch scans progress in real-time. AI deep scans use LLM keyword + scoring; fast scans use regex."
+        actions={
+          <div className="flex items-center gap-2 bg-muted p-1 rounded-lg">
+            <button
+              onClick={() => setUseAi(false)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                !useAi ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Zap className="w-4 h-4" />
+              Fast Regex
+            </button>
+            <button
+              onClick={() => setUseAi(true)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                useAi ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Brain className="w-4 h-4" />
+              AI Deep
+            </button>
+          </div>
+        }
+      />
 
       {message && (
         <div className="bg-blue-50 text-blue-700 px-3 py-2 rounded text-sm">{message}</div>

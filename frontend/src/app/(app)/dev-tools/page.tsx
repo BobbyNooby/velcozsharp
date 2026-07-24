@@ -7,6 +7,9 @@ import { useJobs } from "@/lib/jobs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/page-header";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5038/api";
 
 export default function DevToolsPage() {
   const { orgId, authReady } = useOrg();
@@ -32,21 +35,27 @@ export default function DevToolsPage() {
   }, []);
 
   useEffect(() => {
-    if (!orgId) return;
-    apiFetch("/assets?pageSize=100").then(async (res) => {
-      if (res.ok && mountedRef.current) {
-        const data = await res.json();
-        setAssets(data.items ?? []);
-      }
-    });
-    fetchAuditLogs();
+    const controller = new AbortController();
+    if (!orgId) return () => controller.abort();
+    apiFetch("/assets?pageSize=100", { signal: controller.signal })
+      .then(async (res) => {
+        if (res.ok && mountedRef.current) {
+          const data = await res.json();
+          setAssets(data.items ?? []);
+        }
+      })
+      .catch((err: any) => {
+        if (err?.name === "AbortError") return;
+      });
+    fetchAuditLogs(controller.signal);
+    return () => controller.abort();
   }, [orgId, apiFetch]);
 
   const loginAsAdmin = async () => {
     setLoading(true);
     setMessage("Logging in...");
     try {
-      const res = await fetch("http://localhost:5038/api/auth/login", {
+      const res = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -115,14 +124,16 @@ export default function DevToolsPage() {
     }
   };
 
-  const fetchAuditLogs = async () => {
+  const fetchAuditLogs = async (signal?: AbortSignal) => {
     try {
-      const res = await apiFetch("/audit-logs?pageSize=20");
+      const res = await apiFetch("/audit-logs?pageSize=20", { signal });
       if (res.ok && mountedRef.current) {
         const data = await res.json();
         setAuditLogs(data.items ?? []);
       }
-    } catch {}
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+    }
   };
 
   const createTestNotification = async () => {
@@ -149,7 +160,7 @@ export default function DevToolsPage() {
         options.body = rawBody;
         options.headers = { "Content-Type": "application/json" };
       }
-      const res = await fetch(`http://localhost:5038/api${rawPath}`, options);
+      const res = await fetch(`${API_BASE}${rawPath}`, options);
       const text = await res.text();
       setRawResponse(text);
     } catch (err: any) {
@@ -170,17 +181,17 @@ export default function DevToolsPage() {
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Dev Tools</h1>
-          <p className="text-sm text-gray-600">Test endpoints and inspect background jobs</p>
-        </div>
-        {activeJobs.length > 0 && (
-          <Badge className="bg-blue-100 text-blue-700 animate-pulse">
-            {activeJobs.length} active job(s)
-          </Badge>
-        )}
-      </div>
+      <PageHeader
+        title="Dev Tools"
+        description="Test endpoints and inspect background jobs"
+        actions={
+          activeJobs.length > 0 && (
+            <Badge className="bg-blue-100 text-blue-700 animate-pulse">
+              {activeJobs.length} active job(s)
+            </Badge>
+          )
+        }
+      />
 
       {message && (
         <div className="bg-blue-50 text-blue-700 px-3 py-2 rounded text-sm">{message}</div>
@@ -216,7 +227,7 @@ export default function DevToolsPage() {
               Scan All Assets (Async)
             </Button>
             <Button onClick={refreshJobs} variant="outline">Refresh Jobs</Button>
-            <Button onClick={fetchAuditLogs} variant="outline">Refresh Audit Logs</Button>
+            <Button onClick={() => fetchAuditLogs()} variant="outline">Refresh Audit Logs</Button>
           </div>
 
           {assets.length > 0 && (

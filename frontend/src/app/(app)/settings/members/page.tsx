@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PageHeader } from "@/components/page-header";
 
 type Member = {
   userId: string;
@@ -48,22 +49,26 @@ export default function MembersPage() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const fetchMembers = async () => {
+  const fetchMembers = async (signal?: AbortSignal) => {
     if (!orgId) return;
     setLoading(true);
     try {
-      const res = await apiFetch("/users");
+      const res = await apiFetch("/users", { signal });
       if (res.ok && mountedRef.current) {
         setMembers(await res.json());
       }
-    } catch {}
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+    }
     finally {
       if (mountedRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchMembers();
+    const controller = new AbortController();
+    fetchMembers(controller.signal);
+    return () => controller.abort();
   }, [orgId, apiFetch]);
 
   const invite = async () => {
@@ -126,10 +131,10 @@ export default function MembersPage() {
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Organization Members</h1>
-        <p className="text-sm text-muted-foreground">Invite and manage members</p>
-      </div>
+      <PageHeader
+        title="Organization Members"
+        description="Invite and manage members"
+      />
 
       {message && (
         <div className="bg-blue-50 text-blue-700 px-3 py-2 rounded text-sm">{message}</div>

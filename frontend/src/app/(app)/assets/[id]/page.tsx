@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useOrg, useApiFetch } from "@/lib/api";
+import { severityColor, criticalityColor } from "@/lib/severity";
 import { Button } from "@/components/ui/button";
 
 type Vulnerability = {
@@ -43,25 +44,11 @@ type Asset = {
   updatedAt: string;
 };
 
-const severityColors: Record<string, string> = {
-  CRITICAL: "bg-red-100 text-red-700 border-red-300",
-  HIGH: "bg-orange-100 text-orange-700 border-orange-300",
-  MEDIUM: "bg-yellow-100 text-yellow-700 border-yellow-300",
-  LOW: "bg-blue-100 text-blue-700 border-blue-300",
-};
-
 const statusColors: Record<string, string> = {
   Active: "bg-red-100 text-red-700",
   Acknowledged: "bg-yellow-100 text-yellow-700",
   "False Positive": "bg-gray-100 text-gray-700",
   Mitigated: "bg-green-100 text-green-700",
-};
-
-const criticalityColors: Record<string, string> = {
-  Critical: "bg-red-100 text-red-700 border-red-300",
-  High: "bg-orange-100 text-orange-700 border-orange-300",
-  Medium: "bg-yellow-100 text-yellow-700 border-yellow-300",
-  Low: "bg-blue-100 text-blue-700 border-blue-300",
 };
 
 const vectorLabels: Record<string, string> = {
@@ -257,7 +244,7 @@ export default function AssetDetailPage() {
             >
               {asset.status}
             </span>
-            <span className={`inline-block text-xs px-2 py-0.5 rounded border ${criticalityColors[asset.criticality] ?? "bg-gray-100 text-gray-600"}`}>
+            <span className={`inline-block text-xs px-2 py-0.5 rounded border ${criticalityColor(asset.criticality, { border: true }) || "bg-gray-100 text-gray-600"}`}>
               {asset.criticality}
             </span>
             {asset.tags.map((tag) => (
@@ -374,7 +361,7 @@ export default function AssetDetailPage() {
                 {vuln.severity && (
                   <span
                     className={`text-xs px-2 py-0.5 rounded border ${
-                      severityColors[vuln.severity.toUpperCase()] ?? "bg-gray-100 text-gray-700"
+                      severityColor(vuln.severity, { border: true }) || "bg-gray-100 text-gray-700"
                     }`}
                   >
                     {vuln.severity} {vuln.cvssScore}

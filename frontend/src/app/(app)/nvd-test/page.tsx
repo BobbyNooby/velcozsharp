@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PageHeader } from "@/components/page-header";
 
 const NVD_API = "https://services.nvd.nist.gov/rest/json/cves/2.0";
 
@@ -54,11 +55,15 @@ export default function NvdTestPage() {
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-6">
-      <h1 className="text-2xl font-bold">NVD API Test</h1>
-      <p className="text-sm text-gray-600">
-        Direct queries to <code className="bg-gray-100 px-1">services.nvd.nist.gov</code>.
-        Rate limited — expect ~6 seconds between requests without an API key.
-      </p>
+      <PageHeader
+        title="NVD API Test"
+        description={
+          <>
+            Direct queries to <code className="bg-gray-100 px-1">services.nvd.nist.gov</code>.
+            Rate limited — expect ~6 seconds between requests without an API key.
+          </>
+        }
+      />
 
       {/* Search */}
       <div className="space-y-2">

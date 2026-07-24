@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { UserMenu } from "@/components/user-menu";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Home, Building2, Users, Settings, ArrowLeft, Shield } from "lucide-react";
 
 const platformAdminNav = [
@@ -112,6 +113,9 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
             <div className="flex items-center gap-2">
               <Shield className="size-4 text-primary" />
               <span className="font-semibold">Platform Admin</span>
+            </div>
+            <div className="flex flex-1 items-center justify-end gap-4">
+              <ThemeToggle />
             </div>
           </header>
           <div className="flex flex-1 flex-col overflow-auto">{children}</div>

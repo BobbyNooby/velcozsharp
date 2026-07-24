@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useOrg, useApiFetch, useDebounce } from "@/lib/api";
+import { severityColor } from "@/lib/severity";
 import { ExportButton } from "@/components/export-button";
+import { Pagination } from "@/components/pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/page-header";
 
 type Vuln = {
   assetId: string;
@@ -44,13 +47,6 @@ type Vuln = {
 };
 
 type Option = { id: string; name: string };
-
-const severityColors: Record<string, string> = {
-  CRITICAL: "bg-red-100 text-red-700 hover:bg-red-100",
-  HIGH: "bg-orange-100 text-orange-700 hover:bg-orange-100",
-  MEDIUM: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100",
-  LOW: "bg-blue-100 text-blue-700 hover:bg-blue-100",
-};
 
 const statusColors: Record<string, string> = {
   Active: "bg-red-100 text-red-700 hover:bg-red-100",
@@ -240,26 +236,28 @@ export default function VulnerabilitiesPage() {
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Vulnerabilities</h1>
-        <div className="flex items-center gap-2">
-          <ExportButton
-            basePath="/export/vulnerabilities"
-            params={{
-              ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-              ...(severityFilter && severityFilter !== " " ? { severity: severityFilter } : {}),
-              ...(statusFilter && statusFilter !== " " ? { status: statusFilter } : {}),
-              ...(assetTypeFilter && assetTypeFilter !== " " ? { assetTypeId: assetTypeFilter } : {}),
-              ...(attackVectorFilter && attackVectorFilter !== " " ? { attackVector: attackVectorFilter } : {}),
-              ...(privilegesRequiredFilter && privilegesRequiredFilter !== " " ? { privilegesRequired: privilegesRequiredFilter } : {}),
-              ...(userInteractionFilter && userInteractionFilter !== " " ? { userInteraction: userInteractionFilter } : {}),
-            }}
-          />
-          <Button>
-            <Link href="/cve-mapping">Go to Dashboard</Link>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Vulnerabilities"
+        actions={
+          <>
+            <ExportButton
+              basePath="/export/vulnerabilities"
+              params={{
+                ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+                ...(severityFilter && severityFilter !== " " ? { severity: severityFilter } : {}),
+                ...(statusFilter && statusFilter !== " " ? { status: statusFilter } : {}),
+                ...(assetTypeFilter && assetTypeFilter !== " " ? { assetTypeId: assetTypeFilter } : {}),
+                ...(attackVectorFilter && attackVectorFilter !== " " ? { attackVector: attackVectorFilter } : {}),
+                ...(privilegesRequiredFilter && privilegesRequiredFilter !== " " ? { privilegesRequired: privilegesRequiredFilter } : {}),
+                ...(userInteractionFilter && userInteractionFilter !== " " ? { userInteraction: userInteractionFilter } : {}),
+              }}
+            />
+            <Button>
+              <Link href="/cve-mapping">Go to Dashboard</Link>
+            </Button>
+          </>
+        }
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -463,7 +461,7 @@ export default function VulnerabilitiesPage() {
                 <TableCell className="font-mono text-sm">{v.cveId}</TableCell>
                 <TableCell>
                   {v.severity ? (
-                    <Badge className={severityColors[v.severity.toUpperCase()] ?? ""}>{v.severity}</Badge>
+                    <Badge className={severityColor(v.severity)}>{v.severity}</Badge>
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
@@ -514,15 +512,7 @@ export default function VulnerabilitiesPage() {
           Showing {vulns.length} of {totalCount} CVEs
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
-            Previous
-          </Button>
-          <span className="text-sm">
-            Page {page} of {totalPages}
-          </span>
-          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-            Next
-          </Button>
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
           <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
             <SelectTrigger className="w-[100px] h-8">
               <SelectValue />

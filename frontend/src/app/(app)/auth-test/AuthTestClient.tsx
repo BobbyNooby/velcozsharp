@@ -2,8 +2,9 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useOrg, useApiFetch } from "@/lib/api";
+import { severityColor } from "@/lib/severity";
 
-const API = "http://localhost:5038/api";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5038/api";
 
 const DEV_ACCOUNTS = [
   { email: "admin@test.com", password: "password123", role: "Admin", name: "Admin User" },
@@ -632,7 +633,7 @@ export default function AuthTestClient({
                       {a.assetTypeName} &bull; {a.departmentName}
                     </div>
                     {a.highestSeverity && (
-                      <div className={`text-xs mt-1 inline-block px-1 rounded ${a.highestSeverity === 'Critical' ? 'bg-red-100 text-red-700' : a.highestSeverity === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                      <div className={`text-xs mt-1 inline-block px-1 rounded ${severityColor(a.highestSeverity) || 'bg-blue-100 text-blue-700'}`}>
                         CVSS: {a.highestCvssScore} ({a.highestSeverity})
                       </div>
                     )}

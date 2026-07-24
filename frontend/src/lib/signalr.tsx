@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, ReactNode } from "react";
 import * as signalR from "@microsoft/signalr";
 import { useToast } from "@/lib/toast";
 import { useOrg } from "@/lib/api";
@@ -29,6 +29,14 @@ export function SignalRProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [connected, setConnected] = useState(false);
   const connectionRef = useRef<signalR.HubConnection | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!authReady) return;
@@ -68,16 +76,31 @@ export function SignalRProvider({ children }: { children: ReactNode }) {
     conn.on("ScanProgress", (progress: any) => {
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("velcoz:scan-progress", { detail: progress }));
+        // A terminal progress update means the job record changed; notify listeners
+        // so pollers can refresh immediately.
+        if (progress?.status === "Completed" || progress?.status === "Failed") {
+          window.dispatchEvent(new CustomEvent("velcoz:job-changed", { detail: progress }));
+        }
       }
     });
 
     conn.start()
-      .then(() => setConnected(true))
-      .catch(() => setConnected(false));
+      .then(() => {
+        if (mountedRef.current) setConnected(true);
+      })
+      .catch(() => {
+        if (mountedRef.current) setConnected(false);
+      });
 
-    conn.onreconnecting(() => setConnected(false));
-    conn.onreconnected(() => setConnected(true));
-    conn.onclose(() => setConnected(false));
+    conn.onreconnecting(() => {
+      if (mountedRef.current) setConnected(false);
+    });
+    conn.onreconnected(() => {
+      if (mountedRef.current) setConnected(true);
+    });
+    conn.onclose(() => {
+      if (mountedRef.current) setConnected(false);
+    });
 
     return () => {
       conn.stop();
@@ -97,8 +120,13 @@ export function SignalRProvider({ children }: { children: ReactNode }) {
     };
   }, [orgId, connected]);
 
+  const value = useMemo(
+    () => ({ connection: connectionRef.current, connected }),
+    [connected]
+  );
+
   return (
-    <SignalRContext.Provider value={{ connection: connectionRef.current, connected }}>
+    <SignalRContext.Provider value={value}>
       {children}
     </SignalRContext.Provider>
   );

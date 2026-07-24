@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useTransition } from "react";
 import { useApiFetch, useDebounce } from "@/lib/api";
+import { Pagination } from "@/components/pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import {
 import { TableSkeleton } from "@/components/skeletons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, Building2 } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 
 type PlatformOrg = {
   id: string;
@@ -54,7 +56,7 @@ export default function PlatformOrganizationsPage() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const fetchOrgs = async () => {
+  const fetchOrgs = async (signal?: AbortSignal) => {
     setLoading(true);
     const params = new URLSearchParams();
     params.set("page", String(page));
@@ -63,20 +65,22 @@ export default function PlatformOrganizationsPage() {
     if (isActiveFilter && isActiveFilter !== " ") params.set("isActive", isActiveFilter);
 
     try {
-      const res = await apiFetch(`/platform/organizations?${params.toString()}`);
+      const res = await apiFetch(`/platform/organizations?${params.toString()}`, { signal });
       if (!res.ok || !mountedRef.current) return;
       const data = await res.json();
       setOrgs(data.items || []);
       setTotalCount(data.totalCount || 0);
-    } catch {
-      // ignore
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
     } finally {
       if (mountedRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchOrgs();
+    const controller = new AbortController();
+    fetchOrgs(controller.signal);
+    return () => controller.abort();
   }, [apiFetch, page, pageSize, debouncedSearch, isActiveFilter]);
 
   const updateStatus = (id: string, isActive: boolean) => {
@@ -104,13 +108,10 @@ export default function PlatformOrganizationsPage() {
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Building2 className="size-6" />
-          Organizations
-        </h1>
-        <p className="text-sm text-muted-foreground">Manage all organizations on the platform.</p>
-      </div>
+      <PageHeader
+        title={<><Building2 className="size-6" /> Organizations</>}
+        description="Manage all organizations on the platform."
+      />
 
       {message && (
         <Alert className={message.includes("failed") || message.includes("error") ? "border-destructive" : ""}>
@@ -203,13 +204,7 @@ export default function PlatformOrganizationsPage() {
           Showing {orgs.length} of {totalCount} organizations
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
-            Previous
-          </Button>
-          <span className="text-sm">Page {page} of {totalPages}</span>
-          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-            Next
-          </Button>
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
           <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
             <SelectTrigger className="w-[100px] h-8">
               <SelectValue />
