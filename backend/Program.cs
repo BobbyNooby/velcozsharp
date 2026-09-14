@@ -104,6 +104,10 @@ builder.Services.AddSignalR();
 // AI / OpenRouter
 builder.Services.AddHttpClient<IOpenRouterService, OpenRouterService>();
 
+// Valyu threat intel (API key in user-secrets or env: Valyu__ApiKey)
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<IValyuService, ValyuService>();
+
 // Background worker for async scan jobs
 builder.Services.AddHostedService<BackgroundScanWorker>();
 
