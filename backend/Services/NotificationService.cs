@@ -14,6 +14,7 @@ public interface INotificationService
     Task NotifyScanFailedAsync(Guid organizationId, Guid jobId, string jobName, string errorMessage, string? userId = null, CancellationToken ct = default);
     Task NotifyScheduleFailedAsync(Guid organizationId, Guid scheduleId, string scheduleName, string errorMessage, string? userId = null, CancellationToken ct = default);
     Task NotifyPasswordResetRequestAsync(Guid organizationId, string requesterEmail, string? targetUserId = null, CancellationToken ct = default);
+    Task NotifyReportCompletedAsync(Guid organizationId, Guid reportId, string title, bool succeeded, string? errorMessage = null, CancellationToken ct = default);
 }
 
 public class NotificationService : INotificationService
@@ -123,6 +124,27 @@ public class NotificationService : INotificationService
         await BroadcastAsync(notification);
 
         _logger.LogWarning("Notification: schedule failed for org {OrgId}", organizationId);
+    }
+
+    public async Task NotifyReportCompletedAsync(Guid organizationId, Guid reportId, string title, bool succeeded, string? errorMessage = null, CancellationToken ct = default)
+    {
+        var notification = new Notification
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = organizationId,
+            Type = NotificationType.ReportCompleted,
+            Title = succeeded ? $"Audit report ready: {title}" : $"Audit report failed: {title}",
+            Message = succeeded ? "Your DeepResearch audit report finished generating." : errorMessage ?? "The research task did not complete.",
+            Link = "/intel",
+            IsRead = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.Notifications.Add(notification);
+        await _db.SaveChangesAsync(ct);
+        await BroadcastAsync(notification);
+
+        _logger.LogInformation("Notification: audit report {Result} for org {OrgId}", succeeded ? "completed" : "failed", organizationId);
     }
 
     public async Task NotifyPasswordResetRequestAsync(Guid organizationId, string requesterEmail, string? targetUserId = null, CancellationToken ct = default)

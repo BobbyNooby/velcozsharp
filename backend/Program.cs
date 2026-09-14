@@ -108,6 +108,7 @@ builder.Services.AddHttpClient<IOpenRouterService, OpenRouterService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<IValyuService, ValyuService>();
 builder.Services.AddScoped<IThreatIntelService, ThreatIntelService>();
+builder.Services.AddHostedService<BackgroundDeepResearchWorker>();
 
 // Background worker for async scan jobs
 builder.Services.AddHostedService<BackgroundScanWorker>();

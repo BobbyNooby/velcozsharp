@@ -6,5 +6,6 @@ public enum NotificationType
     ScanCompleted,
     ScanFailed,
     ScheduleFailed,
-    PasswordResetRequested
+    PasswordResetRequested,
+    ReportCompleted
 }
