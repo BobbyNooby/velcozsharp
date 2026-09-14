@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useOrg, useApiFetch } from "@/lib/api";
 import { useJobs } from "@/lib/jobs";
@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { severityClass, severityRank, SeverityBadge } from "@/lib/severity";
+import { DashboardSkeleton } from "@/components/skeletons";
+import { formatRelative } from "@/lib/format";
 
 type DashboardStats = {
   totalAssets: number;
@@ -32,6 +34,27 @@ type DashboardStats = {
   }>;
 };
 
+function isCriticalSeverity(severity?: string) {
+  return (severity ?? "").toUpperCase() === "CRITICAL";
+}
+
+/**
+ * Reads a fetch response as JSON, recording `label` in `failed` when the
+ * request failed or the body could not be parsed.
+ */
+async function readJsonOrFailed(res: Response | null, label: string, failed: string[]) {
+  if (!res || !res.ok) {
+    failed.push(label);
+    return null;
+  }
+  try {
+    return await res.json();
+  } catch {
+    failed.push(label);
+    return null;
+  }
+}
+
 export default function DashboardPage() {
   const { orgId, authReady } = useOrg();
   const apiFetch = useApiFetch();
@@ -44,6 +67,9 @@ export default function DashboardPage() {
   const [jobSummary, setJobSummary] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [failedParts, setFailedParts] = useState<string[]>([]);
+  const [statsFailed, setStatsFailed] = useState(false);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -52,31 +78,52 @@ export default function DashboardPage() {
     };
   }, []);
 
+  const loadDashboard = useCallback(
+    async (signal: AbortSignal) => {
+      const settled = await Promise.allSettled([
+        apiFetch("/dashboard/stats", { signal }),
+        apiFetch("/dashboard/department-breakdown", { signal }),
+        apiFetch("/dashboard/asset-type-breakdown", { signal }),
+        apiFetch("/scan/jobs/summary", { signal }),
+      ]);
+      if (!mountedRef.current || signal.aborted) return;
+
+      const unwrap = (r: PromiseSettledResult<Response>) =>
+        r.status === "fulfilled" ? r.value : null;
+      const [statsRes, deptRes, typeRes, jobsRes] = settled.map(unwrap);
+
+      const failed: string[] = [];
+      const statsData = await readJsonOrFailed(statsRes, "stats", failed);
+      setStatsFailed(statsData === null);
+      if (statsData) setStats(statsData);
+
+      const deptData = await readJsonOrFailed(deptRes, "department breakdown", failed);
+      if (deptData) setDepartmentBreakdown(deptData);
+
+      const typeData = await readJsonOrFailed(typeRes, "asset type breakdown", failed);
+      if (typeData) setAssetTypeBreakdown(typeData);
+
+      const jobsData = await readJsonOrFailed(jobsRes, "scan job summary", failed);
+      if (jobsData) setJobSummary(jobsData);
+
+      setFailedParts(failed);
+    },
+    [apiFetch]
+  );
+
   useEffect(() => {
     if (!orgId) return;
     const controller = new AbortController();
     setLoading(true);
 
-    Promise.all([
-      apiFetch("/dashboard/stats", { signal: controller.signal }),
-      apiFetch("/dashboard/department-breakdown", { signal: controller.signal }),
-      apiFetch("/dashboard/asset-type-breakdown", { signal: controller.signal }),
-      apiFetch("/scan/jobs/summary", { signal: controller.signal }),
-    ])
-      .then(async ([statsRes, deptRes, typeRes, jobsRes]) => {
-        if (!mountedRef.current) return;
-        if (statsRes.ok) setStats(await statsRes.json());
-        if (deptRes.ok) setDepartmentBreakdown(await deptRes.json());
-        if (typeRes.ok) setAssetTypeBreakdown(await typeRes.json());
-        if (jobsRes.ok) setJobSummary(await jobsRes.json());
-      })
+    loadDashboard(controller.signal)
       .catch(() => {})
       .finally(() => {
         if (mountedRef.current) setLoading(false);
       });
 
     return () => controller.abort();
-  }, [orgId, apiFetch]);
+  }, [orgId, apiFetch, loadDashboard, reloadTick]);
 
   const scanAll = async () => {
     setMessage("Queueing scan all assets...");
@@ -96,39 +143,33 @@ export default function DashboardPage() {
   useEffect(() => {
     const controller = new AbortController();
     if (activeJobs.length === 0) {
-      Promise.all([
-        apiFetch("/dashboard/stats", { signal: controller.signal }),
-        apiFetch("/dashboard/department-breakdown", { signal: controller.signal }),
-        apiFetch("/dashboard/asset-type-breakdown", { signal: controller.signal }),
-        apiFetch("/scan/jobs/summary", { signal: controller.signal }),
-      ])
-        .then(async ([statsRes, deptRes, typeRes, jobsRes]) => {
-          if (!mountedRef.current) return;
-          if (statsRes.ok) setStats(await statsRes.json());
-          if (deptRes.ok) setDepartmentBreakdown(await deptRes.json());
-          if (typeRes.ok) setAssetTypeBreakdown(await typeRes.json());
-          if (jobsRes.ok) setJobSummary(await jobsRes.json());
-          setMessage("");
-        })
-        .catch((err: any) => {
-          if (err?.name === "AbortError") return;
+      loadDashboard(controller.signal)
+        .catch(() => {})
+        .then(() => {
+          if (mountedRef.current && !controller.signal.aborted) setMessage("");
         });
     }
     return () => controller.abort();
-  }, [activeJobs.length, apiFetch]);
+  }, [activeJobs.length, loadDashboard]);
 
   if (loading || !authReady) {
-    return (
-      <div className="max-w-7xl mx-auto p-6">
-        <div className="text-gray-500">Loading dashboard...</div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (!stats) {
     return (
-      <div className="max-w-7xl mx-auto p-6">
-        <div className="text-red-600">Failed to load dashboard</div>
+      <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
+        <div className="text-red-600 dark:text-red-400">
+          Failed to load dashboard
+          {failedParts.length > 0 && (
+            <span className="block text-sm text-muted-foreground">
+              Failed requests: {failedParts.join(", ")}
+            </span>
+          )}
+        </div>
+        <Button variant="outline" onClick={() => setReloadTick((t) => t + 1)}>
+          Retry
+        </Button>
       </div>
     );
   }
@@ -204,7 +245,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-1">
-              {severityEntries.length === 0 && <span className="text-sm text-gray-400">None</span>}
+              {severityEntries.length === 0 && <span className="text-sm text-muted-foreground">None</span>}
               {severityEntries.map(([severity, count]) => (
                 <Badge key={severity} className={cn(severityClass(severity), "ring-1 ring-inset")}>
                   {severity}: {count}
@@ -220,7 +261,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
-              {Object.entries(departmentBreakdown).length === 0 && <span className="text-sm text-gray-400">None</span>}
+              {Object.entries(departmentBreakdown).length === 0 && <span className="text-sm text-muted-foreground">None</span>}
               {Object.entries(departmentBreakdown).map(([dept, count]) => (
                 <div key={dept} className="flex justify-between text-sm">
                   <span>{dept}</span>
@@ -237,7 +278,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
-              {Object.entries(assetTypeBreakdown).length === 0 && <span className="text-sm text-gray-400">None</span>}
+              {Object.entries(assetTypeBreakdown).length === 0 && <span className="text-sm text-muted-foreground">None</span>}
               {Object.entries(assetTypeBreakdown).map(([type, count]) => (
                 <div key={type} className="flex justify-between text-sm">
                   <span>{type}</span>
@@ -256,25 +297,47 @@ export default function DashboardPage() {
             <CardTitle>Highest Risk Assets</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {stats.highestRiskAssets.length === 0 && (
-              <div className="text-sm text-gray-500">No assets with CVEs found</div>
-            )}
-            {stats.highestRiskAssets.map((asset) => (
-              <div key={asset.id} className="flex justify-between items-center border-b pb-2 last:border-0">
-                <div>
-                  <Link href={`/assets/${asset.id}`} className="font-medium hover:underline">
-                    {asset.name}
-                  </Link>
-                  <div className="text-xs text-gray-500">{asset.assetTypeName}</div>
-                </div>
-                <div className="text-right">
-                  {asset.highestSeverity && (
-                    <SeverityBadge severity={asset.highestSeverity} score={asset.highestCvssScore} />
-                  )}
-                  <div className="text-xs text-gray-500 mt-1">{asset.vulnerabilityCount} CVE(s)</div>
-                </div>
+            {statsFailed ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm text-red-600 dark:text-red-400">
+                  Failed to load highest risk assets
+                </span>
+                <Button size="sm" variant="outline" onClick={() => setReloadTick((t) => t + 1)}>
+                  Retry
+                </Button>
               </div>
-            ))}
+            ) : (
+              <>
+                {stats.highestRiskAssets.length === 0 && (
+                  <div className="text-sm text-muted-foreground">No assets with CVEs found</div>
+                )}
+                {stats.highestRiskAssets.map((asset) => (
+                  <div key={asset.id} className="flex justify-between items-center border-b pb-2 last:border-0">
+                    <div>
+                      <Link href={`/assets/${asset.id}`} className="font-medium hover:underline">
+                        {asset.name}
+                      </Link>
+                      <div className="text-xs text-muted-foreground">{asset.assetTypeName}</div>
+                    </div>
+                    <div className="text-right">
+                      {asset.highestSeverity && (
+                        <SeverityBadge severity={asset.highestSeverity} score={asset.highestCvssScore} />
+                      )}
+                      <div
+                        className={cn(
+                          "text-xs mt-1",
+                          isCriticalSeverity(asset.highestSeverity)
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        {asset.vulnerabilityCount} CVE(s)
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -285,7 +348,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {stats.recentScanActivity.length === 0 && (
-              <div className="text-sm text-gray-500">No scans yet</div>
+              <div className="text-sm text-muted-foreground">No scans yet</div>
             )}
             {stats.recentScanActivity.map((scan) => (
               <div key={scan.assetId} className="flex justify-between items-center border-b pb-2 last:border-0">
@@ -293,14 +356,15 @@ export default function DashboardPage() {
                   <Link href={`/assets/${scan.assetId}`} className="font-medium hover:underline">
                     {scan.assetName}
                   </Link>
-                  <div className="text-xs text-gray-500">
-                    {scan.lastScannedAt
-                      ? new Date(scan.lastScannedAt).toLocaleString()
-                      : "Never"}
+                  <div className="text-xs text-muted-foreground">
+                    {scan.lastScannedAt ? formatRelative(scan.lastScannedAt) : "Never"}
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm font-medium text-red-600">{scan.vulnerabilitiesFound} CVE(s)</div>
+                  {/* severity is not available per scan row, so keep the count neutral */}
+                  <div className="text-sm font-medium text-muted-foreground">
+                    {scan.vulnerabilitiesFound} CVE(s)
+                  </div>
                 </div>
               </div>
             ))}

@@ -3,12 +3,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useOrg, useApiFetch, useDebounce } from "@/lib/api";
-import { severityColor, criticalityColor, CriticalityBadge } from "@/lib/severity";
+import { severityColor, CriticalityBadge } from "@/lib/severity";
 import { ExportButton } from "@/components/export-button";
 import { Pagination } from "@/components/pagination";
-import { Button } from "@/components/ui/button";
+import { AssetFormDialog } from "@/components/asset-form-dialog";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Table,
   TableBody,
@@ -26,6 +28,9 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
+import { TableSkeleton } from "@/components/skeletons";
+import { cn } from "@/lib/utils";
+import { Plus } from "lucide-react";
 
 type Asset = {
   id: string;
@@ -43,9 +48,18 @@ type Asset = {
   vulnerabilityCount: number;
 };
 
+type AssetListStats = {
+  withCves: number;
+  totalCves: number;
+  clean: number;
+};
+
 type TagOption = { id: string; name: string };
 
 type Option = { id: string; name: string };
+
+const isAbortError = (err: unknown) =>
+  err instanceof DOMException ? err.name === "AbortError" : (err as { name?: string })?.name === "AbortError";
 
 export default function AssetsPage() {
   const { orgId, authReady } = useOrg();
@@ -57,6 +71,9 @@ export default function AssetsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
+  const [listError, setListError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -73,6 +90,11 @@ export default function AssetsPage() {
   const [assetTypes, setAssetTypes] = useState<Option[]>([]);
   const [departments, setDepartments] = useState<Option[]>([]);
   const [tags, setTags] = useState<TagOption[]>([]);
+  const [optionsError, setOptionsError] = useState("");
+  const [optionsRetryKey, setOptionsRetryKey] = useState(0);
+
+  // Optional server-side aggregate stats; falls back to page-computed values.
+  const [serverStats, setServerStats] = useState<AssetListStats | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -93,21 +115,34 @@ export default function AssetsPage() {
       apiFetch("/tags", { signal: controller.signal }),
     ])
       .then(async ([atRes, deptRes, tagRes]) => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || controller.signal.aborted) return;
+        let failed = false;
         if (atRes.ok) {
           const data = await atRes.json();
           setAssetTypes(data.items ?? []);
+        } else {
+          failed = true;
         }
         if (deptRes.ok) {
           const data = await deptRes.json();
           setDepartments(data.items ?? []);
+        } else {
+          failed = true;
         }
-        if (tagRes.ok) setTags(await tagRes.json());
+        if (tagRes.ok) {
+          setTags(await tagRes.json());
+        } else {
+          failed = true;
+        }
+        setOptionsError(failed ? "Could not load filter options." : "");
       })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        if (isAbortError(err)) return;
+        if (mountedRef.current) setOptionsError("Could not load filter options.");
+      });
 
     return () => controller.abort();
-  }, [orgId, apiFetch]);
+  }, [orgId, apiFetch, optionsRetryKey]);
 
   // Fetch assets when filters/page change
   useEffect(() => {
@@ -132,28 +167,48 @@ export default function AssetsPage() {
     apiFetch(`/assets?${params.toString()}`, { signal: controller.signal })
       .then(async (res) => {
         if (!mountedRef.current) return;
-        if (res.ok) {
-          const data = await res.json();
-          setAssets(data.items ?? []);
-          setTotalCount(data.totalCount ?? 0);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setListError(data.message ?? `Failed to load assets (HTTP ${res.status}).`);
+          setAssets([]);
+          setTotalCount(0);
+          setServerStats(null);
+          return;
+        }
+        const data = await res.json();
+        setListError("");
+        setAssets(data.items ?? []);
+        setTotalCount(data.totalCount ?? 0);
+        setServerStats(data.stats ?? null);
+      })
+      .catch((err: unknown) => {
+        if (isAbortError(err)) return;
+        if (mountedRef.current) {
+          setListError("Network error while loading assets.");
+          setAssets([]);
+          setTotalCount(0);
+          setServerStats(null);
         }
       })
-      .catch(() => {})
       .finally(() => {
         if (mountedRef.current) setLoading(false);
       });
 
     return () => controller.abort();
-  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, debouncedSearch, statusFilter, assetTypeFilter, departmentFilter, severityFilter, criticalityFilter, tagFilter, hasVulnsFilter]);
+  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, debouncedSearch, statusFilter, assetTypeFilter, departmentFilter, severityFilter, criticalityFilter, tagFilter, hasVulnsFilter, reloadKey]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   const stats = {
     total: totalCount,
-    withCves: assets.filter((a) => a.vulnerabilityCount > 0).length,
-    totalCves: assets.reduce((s, a) => s + a.vulnerabilityCount, 0),
-    clean: assets.filter((a) => a.vulnerabilityCount === 0).length,
+    withCves: serverStats?.withCves ?? assets.filter((a) => a.vulnerabilityCount > 0).length,
+    totalCves: serverStats?.totalCves ?? assets.reduce((s, a) => s + a.vulnerabilityCount, 0),
+    clean: serverStats?.clean ?? assets.filter((a) => a.vulnerabilityCount === 0).length,
   };
+
+  const handleSaved = useCallback(() => {
+    setReloadKey((k) => k + 1);
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
@@ -174,8 +229,12 @@ export default function AssetsPage() {
                 ...(hasVulnsFilter && hasVulnsFilter !== " " ? { hasVulnerabilities: hasVulnsFilter } : {}),
               }}
             />
-            <Button>
-              <Link href="/cve-mapping">Go to Dashboard</Link>
+            <Link href="/cve-mapping" className={cn(buttonVariants())}>
+              Run a Scan
+            </Link>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-1 size-4" />
+              Add Asset
             </Button>
           </>
         }
@@ -196,7 +255,7 @@ export default function AssetsPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">With CVEs</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.withCves}</div>
+            <div className="text-2xl font-bold text-red-600 dark:text-red-400">{stats.withCves}</div>
           </CardContent>
         </Card>
         <Card>
@@ -204,7 +263,7 @@ export default function AssetsPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Total CVEs</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{stats.totalCves}</div>
+            <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{stats.totalCves}</div>
           </CardContent>
         </Card>
         <Card>
@@ -212,10 +271,26 @@ export default function AssetsPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Clean</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.clean}</div>
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.clean}</div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Filter options error */}
+      {optionsError && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>{optionsError} Filtering by type, department, or tag may be unavailable.</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setOptionsRetryKey((k) => k + 1)}
+            >
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
@@ -224,6 +299,7 @@ export default function AssetsPage() {
             placeholder="Search assets..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            aria-label="Search assets"
           />
         </div>
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v ?? ""); setPage(1); }}>
@@ -316,7 +392,12 @@ export default function AssetsPage() {
             <SelectItem value="lastScanned">Last Scanned</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="outline" size="sm" onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+          aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"} — click to toggle`}
+        >
           {sortOrder === "asc" ? "ASC" : "DESC"}
         </Button>
       </div>
@@ -341,19 +422,31 @@ export default function AssetsPage() {
           <TableBody>
             {(loading || !authReady) && (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                  Loading...
+                <TableCell colSpan={10}>
+                  <TableSkeleton rows={5} columns={10} />
                 </TableCell>
               </TableRow>
             )}
-            {authReady && !loading && assets.length === 0 && (
+            {authReady && !loading && !listError && assets.length === 0 && (
               <TableRow>
                 <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                   No assets found
                 </TableCell>
               </TableRow>
             )}
-            {assets.map((asset) => (
+            {authReady && !loading && listError && (
+              <TableRow>
+                <TableCell colSpan={10} className="py-8">
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-sm text-destructive" role="alert">{listError}</span>
+                    <Button variant="outline" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
+                      Retry
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )}
+            {authReady && !loading && assets.map((asset) => (
               <TableRow key={asset.id}>
                 <TableCell>
                   <Link href={`/assets/${asset.id}`} className="font-medium hover:underline">
@@ -380,7 +473,7 @@ export default function AssetsPage() {
                 </TableCell>
                 <TableCell>
                   {asset.vulnerabilityCount > 0 ? (
-                    <span className="text-red-600 font-medium">{asset.vulnerabilityCount}</span>
+                    <span className="text-red-600 dark:text-red-400 font-medium">{asset.vulnerabilityCount}</span>
                   ) : (
                     <span className="text-muted-foreground">0</span>
                   )}
@@ -398,9 +491,12 @@ export default function AssetsPage() {
                   {asset.lastScannedAt ? new Date(asset.lastScannedAt).toLocaleDateString() : "Never"}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button size="sm" variant="outline">
-                    <Link href={`/assets/${asset.id}`}>View</Link>
-                  </Button>
+                  <Link
+                    href={`/assets/${asset.id}`}
+                    className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                  >
+                    View
+                  </Link>
                 </TableCell>
               </TableRow>
             ))}
@@ -416,7 +512,7 @@ export default function AssetsPage() {
         <div className="flex items-center gap-2">
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
           <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
-            <SelectTrigger className="w-[100px] h-8">
+            <SelectTrigger className="w-[100px] h-8" aria-label="Page size">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -427,6 +523,13 @@ export default function AssetsPage() {
           </Select>
         </div>
       </div>
+
+      <AssetFormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        mode="create"
+        onSaved={handleSaved}
+      />
     </div>
   );
 }

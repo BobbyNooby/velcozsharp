@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useOrg, useApiFetch, useDebounce } from "@/lib/api";
 import { Pagination } from "@/components/pagination";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -20,7 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ScrollText } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { TableSkeleton } from "@/components/skeletons";
 
 type AuditLog = {
   id: string;
@@ -40,6 +44,7 @@ export default function AuditLogsPage() {
 
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [actionFilter, setActionFilter] = useState("");
   const [entityTypeFilter, setEntityTypeFilter] = useState("");
   const [from, setFrom] = useState("");
@@ -50,6 +55,7 @@ export default function AuditLogsPage() {
   const [totalCount, setTotalCount] = useState(0);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const hasFilters = Boolean(actionFilter || entityTypeFilter || from || to);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -59,6 +65,7 @@ export default function AuditLogsPage() {
   const fetchLogs = async (signal?: AbortSignal) => {
     if (!orgId) return;
     setLoading(true);
+    setError("");
     try {
       const params = new URLSearchParams();
       params.set("page", String(page));
@@ -72,9 +79,12 @@ export default function AuditLogsPage() {
         const data = await res.json();
         setLogs(data.items ?? []);
         setTotalCount(data.totalCount ?? 0);
+      } else if (!res.ok && mountedRef.current) {
+        setError("Failed to load audit logs.");
       }
     } catch (err: any) {
       if (err?.name === "AbortError") return;
+      if (mountedRef.current) setError("Failed to load audit logs.");
     } finally {
       if (mountedRef.current) setLoading(false);
     }
@@ -96,15 +106,21 @@ export default function AuditLogsPage() {
       />
 
       <div className="flex flex-wrap gap-3 items-end">
-        <Input placeholder="Action" value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(1); }} className="w-[150px]" />
-        <Input placeholder="Entity Type" value={entityTypeFilter} onChange={(e) => { setEntityTypeFilter(e.target.value); setPage(1); }} className="w-[150px]" />
-        <div className="text-sm">
-          <label className="block text-xs text-muted-foreground">From</label>
-          <Input type="datetime-local" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); }} />
+        <div className="space-y-1">
+          <Label htmlFor="filter-action" className="text-xs text-muted-foreground">Action</Label>
+          <Input id="filter-action" placeholder="Action" value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(1); }} className="w-[150px]" />
         </div>
-        <div className="text-sm">
-          <label className="block text-xs text-muted-foreground">To</label>
-          <Input type="datetime-local" value={to} onChange={(e) => { setTo(e.target.value); setPage(1); }} />
+        <div className="space-y-1">
+          <Label htmlFor="filter-entity-type" className="text-xs text-muted-foreground">Entity Type</Label>
+          <Input id="filter-entity-type" placeholder="Entity Type" value={entityTypeFilter} onChange={(e) => { setEntityTypeFilter(e.target.value); setPage(1); }} className="w-[150px]" />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="filter-from" className="text-xs text-muted-foreground">From</Label>
+          <Input id="filter-from" type="datetime-local" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); }} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="filter-to" className="text-xs text-muted-foreground">To</Label>
+          <Input id="filter-to" type="datetime-local" value={to} onChange={(e) => { setTo(e.target.value); setPage(1); }} />
         </div>
       </div>
 
@@ -114,9 +130,19 @@ export default function AuditLogsPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-muted-foreground">Loading...</div>
+            <TableSkeleton rows={5} columns={5} />
+          ) : error ? (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <span>{error}</span>
+              <Button variant="outline" size="sm" onClick={() => fetchLogs()}>Retry</Button>
+            </div>
           ) : logs.length === 0 ? (
-            <div className="text-muted-foreground">No audit logs found</div>
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+              <ScrollText className="size-8 text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground">
+                {hasFilters ? "No audit entries match these filters" : "No audit entries yet"}
+              </p>
+            </div>
           ) : (
             <Table>
               <TableHeader>

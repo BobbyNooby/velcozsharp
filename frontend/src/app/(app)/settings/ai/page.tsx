@@ -100,7 +100,7 @@ export default function AiSettingsPage() {
   }
 
   if (!org) {
-    return <div className="text-red-600">Failed to load organization.</div>;
+    return <div className="text-destructive">Failed to load organization.</div>;
   }
 
   return (
@@ -193,7 +193,7 @@ export default function AiSettingsPage() {
         </Card>
 
         {message && (
-          <div className="text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded">{message}</div>
+          <div className="text-sm text-foreground bg-muted px-3 py-2 rounded">{message}</div>
         )}
 
         <Button type="submit" disabled={saving}>

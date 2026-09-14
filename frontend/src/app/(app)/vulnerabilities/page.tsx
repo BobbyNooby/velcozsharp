@@ -3,9 +3,13 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useOrg, useApiFetch, useDebounce } from "@/lib/api";
-import { severityColor } from "@/lib/severity";
+import { severityClass } from "@/lib/severity";
+import { useToast } from "@/lib/toast";
+import { formatDate } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { ExportButton } from "@/components/export-button";
 import { Pagination } from "@/components/pagination";
+import { TableSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -35,9 +39,9 @@ type Vuln = {
   vulnerabilityId: string;
   cveId: string;
   description?: string;
-  cvssScore?: number;
-  severity?: string;
-  attackVector?: string;
+  cvssScore?: number | null; // provided by API when available
+  severity?: string; // provided by API when available
+  attackVector?: string | null; // provided by API when available
   privilegesRequired?: string;
   userInteraction?: string;
   publishedDate?: string;
@@ -46,13 +50,29 @@ type Vuln = {
   matchedKeyword?: string;
 };
 
+// provided by API when available; used to drive the Active/CRITICAL/HIGH stat cards
+type VulnListStats = { active: number; critical: number; high: number };
+
+type VulnsResponse = {
+  items?: Vuln[];
+  totalCount?: number;
+  stats?: VulnListStats; // provided by API when available
+};
+
 type Option = { id: string; name: string };
 
 const statusColors: Record<string, string> = {
-  Active: "bg-red-100 text-red-700 hover:bg-red-100",
-  Acknowledged: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100",
-  "False Positive": "bg-gray-100 text-gray-700 hover:bg-gray-100",
-  Mitigated: "bg-green-100 text-green-700 hover:bg-green-100",
+  Active: "bg-red-500/12 text-red-700 dark:text-red-400 ring-red-500/20 ring-1 ring-inset",
+  Acknowledged: "bg-amber-500/12 text-amber-700 dark:text-amber-400 ring-amber-500/20 ring-1 ring-inset",
+  "False Positive": "bg-muted text-muted-foreground",
+  Mitigated: "bg-green-500/12 text-green-700 dark:text-green-400 ring-green-500/20 ring-1 ring-inset",
+};
+
+const bulkStatusTitles: Record<string, string> = {
+  Active: "reactivated",
+  Acknowledged: "acknowledged",
+  Mitigated: "mitigated",
+  "False Positive": "marked as false positive",
 };
 
 const vectorLabels: Record<string, string> = {
@@ -73,7 +93,7 @@ const interactionLabels: Record<string, string> = {
   REQUIRED: "User interaction",
 };
 
-function formatVector(value?: string) {
+function formatVector(value?: string | null) {
   if (!value) return "—";
   return vectorLabels[value.toUpperCase()] ?? value;
 }
@@ -91,13 +111,17 @@ function formatInteraction(value?: string) {
 export default function VulnerabilitiesPage() {
   const { orgId, authReady } = useOrg();
   const apiFetch = useApiFetch();
+  const { addToast } = useToast();
   const mountedRef = useRef(true);
 
   const [vulns, setVulns] = useState<Vuln[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [serverStats, setServerStats] = useState<VulnListStats | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -139,7 +163,7 @@ export default function VulnerabilitiesPage() {
     return () => controller.abort();
   }, [orgId, apiFetch]);
 
-  // Fetch vulnerabilities when filters/page change
+  // Fetch vulnerabilities when filters/page change (refreshTick forces a refetch)
   useEffect(() => {
     if (!orgId) return;
     const controller = new AbortController();
@@ -163,26 +187,53 @@ export default function VulnerabilitiesPage() {
       .then(async (res) => {
         if (!mountedRef.current) return;
         if (res.ok) {
-          const data = await res.json();
+          const data: VulnsResponse = await res.json();
           setVulns(data.items ?? []);
           setTotalCount(data.totalCount ?? 0);
+          setServerStats(data.stats ?? null); // provided by API when available
+          setFetchError(false);
+        } else {
+          setVulns([]);
+          setTotalCount(0);
+          setServerStats(null);
+          setFetchError(true);
         }
       })
-      .catch(() => {})
+      .catch((err: unknown) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+        if (!mountedRef.current) return;
+        setVulns([]);
+        setTotalCount(0);
+        setServerStats(null);
+        setFetchError(true);
+      })
       .finally(() => {
         if (mountedRef.current) setLoading(false);
       });
 
     return () => controller.abort();
-  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, debouncedSearch, severityFilter, statusFilter, assetTypeFilter, attackVectorFilter, privilegesRequiredFilter, userInteractionFilter]);
+  }, [orgId, apiFetch, page, pageSize, sortBy, sortOrder, debouncedSearch, severityFilter, statusFilter, assetTypeFilter, attackVectorFilter, privilegesRequiredFilter, userInteractionFilter, refreshTick]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
+  // Prefer server-side stats when the API provides them; otherwise fall back to
+  // counting the current page.
   const stats = {
     total: totalCount,
-    active: vulns.filter((v) => v.status === "Active").length,
-    critical: vulns.filter((v) => v.severity === "CRITICAL").length,
-    high: vulns.filter((v) => v.severity === "HIGH").length,
+    active: serverStats
+      ? serverStats.active
+      : vulns.filter((v) => v.status === "Active").length,
+    critical: serverStats
+      ? serverStats.critical
+      : vulns.filter((v) => (v.severity ?? "").toUpperCase() === "CRITICAL").length,
+    high: serverStats
+      ? serverStats.high
+      : vulns.filter((v) => (v.severity ?? "").toUpperCase() === "HIGH").length,
+  };
+
+  const retryFetch = () => {
+    setFetchError(false);
+    setRefreshTick((t) => t + 1);
   };
 
   const toggleSelect = (id: string) => {
@@ -205,19 +256,30 @@ export default function VulnerabilitiesPage() {
   const bulkUpdateStatus = async (newStatus: string) => {
     if (selectedIds.size === 0) return;
     setBulkLoading(true);
+    const count = selectedIds.size;
     try {
       const res = await apiFetch("/vulnerabilities/bulk-status", {
         method: "PATCH",
         body: JSON.stringify({ vulnerabilityIds: Array.from(selectedIds), status: newStatus }),
       });
-      if (res.ok && mountedRef.current) {
+      if (res.ok) {
+        addToast({
+          title: `${count} CVE${count === 1 ? "" : "s"} ${bulkStatusTitles[newStatus] ?? `set to ${newStatus}`}`,
+          variant: "success",
+        });
         setSelectedIds(new Set());
-        // Trigger refresh by bumping a dummy state or just re-fetch
-        // We'll force a re-fetch by resetting page to same value (useEffect will run)
-        setPage((p) => p);
+        setRefreshTick((t) => t + 1); // refetch so the new statuses show immediately
+      } else {
+        let detail: string | undefined;
+        try {
+          detail = (await res.json())?.message;
+        } catch {}
+        addToast({ title: "Failed to update CVEs", message: detail, variant: "destructive" });
       }
-    } catch {}
-    setBulkLoading(false);
+    } catch {
+      addToast({ title: "Failed to update CVEs", message: "Network error", variant: "destructive" });
+    }
+    if (mountedRef.current) setBulkLoading(false);
   };
 
   const updateSingleStatus = async (vulnId: string, newStatus: string) => {
@@ -230,8 +292,14 @@ export default function VulnerabilitiesPage() {
         setVulns((prev) =>
           prev.map((v) => (v.vulnerabilityId === vulnId ? { ...v, status: newStatus } : v))
         );
+      } else if (mountedRef.current) {
+        addToast({ title: "Failed to update status", variant: "destructive" });
       }
-    } catch {}
+    } catch {
+      if (mountedRef.current) {
+        addToast({ title: "Failed to update status", message: "Network error", variant: "destructive" });
+      }
+    }
   };
 
   return (
@@ -253,7 +321,7 @@ export default function VulnerabilitiesPage() {
               }}
             />
             <Button>
-              <Link href="/cve-mapping">Go to Dashboard</Link>
+              <Link href="/cve-mapping">Run a Scan</Link>
             </Button>
           </>
         }
@@ -377,6 +445,7 @@ export default function VulnerabilitiesPage() {
             <SelectValue placeholder="Sort by" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="severity">Severity</SelectItem>
             <SelectItem value="cvss">CVSS</SelectItem>
             <SelectItem value="detected">Detected</SelectItem>
             <SelectItem value="published">Published</SelectItem>
@@ -408,103 +477,116 @@ export default function VulnerabilitiesPage() {
       )}
 
       {/* Table */}
-      <div className="border rounded-md">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-10">
-                <Checkbox
-                  checked={vulns.length > 0 && selectedIds.size === vulns.length}
-                  onCheckedChange={toggleSelectAll}
-                />
-              </TableHead>
-              <TableHead>Asset</TableHead>
-              <TableHead>CVE ID</TableHead>
-              <TableHead>Severity</TableHead>
-              <TableHead>CVSS</TableHead>
-              <TableHead>Vector</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Detected</TableHead>
-              <TableHead>Published</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(loading || !authReady) && (
+      {loading || !authReady ? (
+        <TableSkeleton rows={8} columns={6} />
+      ) : (
+        <div className="border rounded-md">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                  Loading...
-                </TableCell>
-              </TableRow>
-            )}
-            {authReady && !loading && vulns.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                  No vulnerabilities found
-                </TableCell>
-              </TableRow>
-            )}
-            {vulns.map((v) => (
-              <TableRow key={v.vulnerabilityId}>
-                <TableCell>
+                <TableHead className="w-10">
                   <Checkbox
-                    checked={selectedIds.has(v.vulnerabilityId)}
-                    onCheckedChange={() => toggleSelect(v.vulnerabilityId)}
+                    checked={vulns.length > 0 && selectedIds.size === vulns.length}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="Select all visible CVEs"
                   />
-                </TableCell>
-                <TableCell>
-                  <Link href={`/assets/${v.assetId}`} className="font-medium hover:underline block">
-                    {v.assetName}
-                  </Link>
-                  <span className="text-xs text-muted-foreground">{v.assetTypeName}</span>
-                </TableCell>
-                <TableCell className="font-mono text-sm">{v.cveId}</TableCell>
-                <TableCell>
-                  {v.severity ? (
-                    <Badge className={severityColor(v.severity)}>{v.severity}</Badge>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell>{v.cvssScore ?? "—"}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {v.attackVector ? (
-                    <div className="space-y-0.5">
-                      <div>{formatVector(v.attackVector)}</div>
-                      {v.privilegesRequired && <div className="text-gray-500">{formatPrivileges(v.privilegesRequired)}</div>}
-                      {v.userInteraction && <div className="text-gray-500">{formatInteraction(v.userInteraction)}</div>}
-                    </div>
-                  ) : (
-                    "—"
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge className={statusColors[v.status] ?? ""}>{v.status}</Badge>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {new Date(v.detectedAt).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {v.publishedDate ? new Date(v.publishedDate).toLocaleDateString() : "—"}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Select value={v.status} onValueChange={(s) => s && updateSingleStatus(v.vulnerabilityId, s)}>
-                    <SelectTrigger className="w-[130px] h-7 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Active">Active</SelectItem>
-                      <SelectItem value="Acknowledged">Acknowledged</SelectItem>
-                      <SelectItem value="False Positive">False Positive</SelectItem>
-                      <SelectItem value="Mitigated">Mitigated</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </TableCell>
+                </TableHead>
+                <TableHead>Asset</TableHead>
+                <TableHead>CVE ID</TableHead>
+                <TableHead>Severity</TableHead>
+                <TableHead>CVSS</TableHead>
+                <TableHead>Vector</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Detected</TableHead>
+                <TableHead>Published</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {fetchError && (
+                <TableRow>
+                  <TableCell colSpan={10}>
+                    <div className="flex items-center justify-center gap-3 py-6">
+                      <span className="text-sm text-red-600 dark:text-red-400">
+                        Failed to load vulnerabilities
+                      </span>
+                      <Button size="sm" variant="outline" onClick={retryFetch}>
+                        Retry
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!fetchError && vulns.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                    No vulnerabilities found
+                  </TableCell>
+                </TableRow>
+              )}
+              {vulns.map((v) => (
+                <TableRow key={v.vulnerabilityId}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedIds.has(v.vulnerabilityId)}
+                      onCheckedChange={() => toggleSelect(v.vulnerabilityId)}
+                      aria-label={`Select ${v.cveId}`}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Link href={`/assets/${v.assetId}`} className="font-medium hover:underline block">
+                      {v.assetName}
+                    </Link>
+                    <span className="text-xs text-muted-foreground">{v.assetTypeName}</span>
+                  </TableCell>
+                  <TableCell className="font-mono text-sm">{v.cveId}</TableCell>
+                  <TableCell>
+                    {v.severity ? (
+                      <Badge className={cn(severityClass(v.severity), "ring-1 ring-inset")}>{v.severity}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>{v.cvssScore ?? "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {v.attackVector ? (
+                      <div className="space-y-0.5">
+                        <div>{formatVector(v.attackVector)}</div>
+                        {v.privilegesRequired && <div>{formatPrivileges(v.privilegesRequired)}</div>}
+                        {v.userInteraction && <div>{formatInteraction(v.userInteraction)}</div>}
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={statusColors[v.status] ?? ""}>{v.status}</Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatDate(v.detectedAt)}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {v.publishedDate ? formatDate(v.publishedDate) : "—"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Select value={v.status} onValueChange={(s) => s && updateSingleStatus(v.vulnerabilityId, s)}>
+                      <SelectTrigger className="w-[130px] h-7 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Acknowledged">Acknowledged</SelectItem>
+                        <SelectItem value="False Positive">False Positive</SelectItem>
+                        <SelectItem value="Mitigated">Mitigated</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {/* Pagination */}
       <div className="flex items-center justify-between">

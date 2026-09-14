@@ -85,7 +85,7 @@ export default function GeneralSettingsPage() {
   }
 
   if (!org) {
-    return <div className="text-red-600">Failed to load organization.</div>;
+    return <div className="text-destructive">Failed to load organization.</div>;
   }
 
   return (

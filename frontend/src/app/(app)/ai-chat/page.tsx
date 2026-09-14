@@ -52,18 +52,18 @@ export default function AiChatPage() {
         title="AI Chat Demo"
         description={
           <>
-            Test the OpenRouter connection. Default model: <code className="bg-gray-100 px-1 rounded">deepseek/deepseek-v4-flash</code>.
+            Test the OpenRouter connection. Default model: <code className="bg-muted px-1 rounded">deepseek/deepseek-v4-flash</code>.
           </>
         }
       />
 
       {error && (
-        <div className="bg-red-50 text-red-700 px-3 py-2 rounded text-sm">{error}</div>
+        <div className="bg-destructive/10 text-destructive px-3 py-2 rounded text-sm">{error}</div>
       )}
 
-      <div className="border rounded-lg p-4 space-y-3 min-h-[300px] max-h-[500px] overflow-y-auto bg-gray-50">
+      <div className="border rounded-lg p-4 space-y-3 min-h-[300px] max-h-[500px] overflow-y-auto bg-muted/50">
         {history.length === 0 && !loading && (
-          <div className="text-center text-gray-400 py-12">
+          <div className="text-center text-muted-foreground py-12">
             Type a message to test the AI connection
           </div>
         )}
@@ -76,8 +76,8 @@ export default function AiChatPage() {
             <div
               className={`max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
                 entry.role === "user"
-                  ? "bg-blue-600 text-white"
-                  : "bg-white border text-gray-800"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-card border"
               }`}
             >
               {entry.content}
@@ -87,7 +87,7 @@ export default function AiChatPage() {
 
         {loading && (
           <div className="flex justify-start">
-            <div className="bg-white border rounded-lg px-3 py-2 text-sm text-gray-400 animate-pulse">
+            <div className="bg-card border rounded-lg px-3 py-2 text-sm text-muted-foreground animate-pulse">
               Thinking...
             </div>
           </div>
@@ -103,7 +103,7 @@ export default function AiChatPage() {
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
           placeholder="Ask anything to test OpenRouter..."
-          className="flex-1 border rounded-lg px-3 py-2 text-sm"
+          className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground placeholder:text-muted-foreground"
           disabled={loading}
         />
         <Button onClick={send} disabled={loading || !message.trim()}>
