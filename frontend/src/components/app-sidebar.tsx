@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UserMenu } from "@/components/user-menu";
 import { settingsNavItems, filterNavByRole } from "@/lib/nav";
-import { ChevronDown, Plus, Check, Shield, Home, Server, ShieldAlert, ScanLine, FlaskConical, Building2, Users, Settings } from "lucide-react";
+import { ChevronDown, Plus, Check, Shield, Home, Server, ShieldAlert, ScanLine, FlaskConical, Radar, Building2, Users, Settings } from "lucide-react";
 
 const mainNav = [
   { href: "/", label: "Home", icon: Home },
@@ -32,6 +32,7 @@ const mainNav = [
   { href: "/vulnerabilities", label: "CVEs", icon: ShieldAlert },
   { href: "/cve-mapping", label: "Scan", icon: ScanLine, roles: ["Admin", "SecurityAnalyst"] },
   { href: "/scan-lab", label: "Scan Lab", icon: FlaskConical, roles: ["Admin", "SecurityAnalyst"] },
+  { href: "/intel", label: "Threat Intel", icon: Radar, roles: ["Admin", "SecurityAnalyst"] },
 ];
 
 const platformAdminNav = [

@@ -128,3 +128,19 @@
     @apply font-sans;
   }
 }
+/* Threat-intel report live progress */
+@keyframes intel-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+.intel-shimmer {
+  animation: intel-shimmer 1.8s ease-in-out infinite;
+}
+@keyframes intel-ring {
+  0% { box-shadow: 0 0 0 0 rgb(124 58 237 / 0.45); }
+  70% { box-shadow: 0 0 0 8px rgb(124 58 237 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(124 58 237 / 0); }
+}
+.intel-ring {
+  animation: intel-ring 1.6s ease-out infinite;
+}

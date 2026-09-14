@@ -15,6 +15,7 @@ export const ROUTE_ROLES: Record<string, { roles: string[]; redirectTo: string }
   "/ai-chat": { roles: ["Admin", "SecurityAnalyst"], redirectTo: "/" },
   "/cve-mapping": { roles: ["Admin", "SecurityAnalyst"], redirectTo: "/" },
   "/scan-lab": { roles: ["Admin", "SecurityAnalyst"], redirectTo: "/" },
+  "/intel": { roles: ["Admin", "SecurityAnalyst"], redirectTo: "/" },
 };
 
 /**
