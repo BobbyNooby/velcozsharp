@@ -25,5 +25,7 @@
 - **Audit trail** — Immutable before/after logs for every change, capturing who did what and when
 - **AI-assisted CVE relevance scoring** — OpenRouter ranks NVD results to reduce false positives
 - **AI-suggested mitigations** — OpenRouter recommends patch/update steps (human-verified before action)
+- **Threat intel briefs (Valyu)** — one-click, cited sweep of fresh exploit news, vendor advisories, and compliance changes scoped to the org's actual asset inventory
+- **DeepResearch audit reports** — one-click, timestamped security audit: an autonomous research agent verifies exploitation evidence for the org's known CVEs and writes a cited, shareable PDF report
 - **Risk dashboard** — Real-time stats showing exposure by severity, department, and asset type
 - **Export** — Generate CSV and JSON security reports for leadership

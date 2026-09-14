@@ -70,6 +70,7 @@ backend/
 | `ScanScheduleController` | CRUD for recurring scan schedules |
 | `NotificationsController` | In-app notifications: list, mark read, test |
 | `AuditLogsController` | Read audit trail |
+| `IntelController` | Valyu threat-intel briefs: config status + generate |
 
 ### Key Services
 
@@ -84,6 +85,8 @@ backend/
 | `AssetTypeTemplateService` | Seeds built-in asset type templates per org |
 | `NotificationService` | Creates notifications and broadcasts via SignalR |
 | `NotificationHub` | SignalR hub; clients join org groups to receive push notifications |
+| `ValyuService` | HTTP client for the Valyu search API (`x-api-key`, `POST /v1/search`) |
+| `ThreatIntelService` | Plans asset/CVE-targeted Valyu queries per org, optional OpenRouter rerank, 15-min response cache |
 
 ---
 
@@ -335,6 +338,13 @@ The same CVE (e.g., CVE-2024-XXXX) can affect many assets. Storing it once saves
 - `GET /api/scan-schedules/{id}`
 - `PATCH/DELETE /api/scan-schedules/{id}`
 
+### Threat Intel (Valyu)
+- `GET /api/intel/status` — is the Valyu key configured + is AI enabled (no credits spent)
+- `POST /api/intel/brief` — `{ sinceDays, useAiRerank, maxQueries }` → cited brief (Admin/SecurityAnalyst only)
+- `POST /api/intel/reports` — `{ mode: fast|standard, sinceDays }` → 202, starts a DeepResearch audit report (Admin/SecurityAnalyst only)
+- `GET /api/intel/reports` — audit report library (progress-hydrated)
+- `GET /api/intel/reports/{id}` — full report: markdown, sources, cost, PDF link
+
 ### Seeding
 - `POST /api/seed/demo-assets`
 
@@ -393,6 +403,37 @@ VelcozSharp uses the **OpenRouter API** from the backend to enhance vulnerabilit
 - `OpenRouterService` lives in `backend/Services/`.
 - `AiCveMappingService` calls it for keyword suggestion and CVE scoring.
 - Prompt templates live in `backend/Prompts/` and are loaded as embedded resources via `AiPrompts.cs`.
+
+---
+
+## Valyu Threat Intel Integration
+
+> **Status: Implemented.** One-click cited briefs on the `/intel` page (Admin/SecurityAnalyst).
+
+VelcozSharp uses the **Valyu search API** (`https://api.valyu.ai`, `x-api-key` header) to sweep fresh threat intelligence scoped to the org's inventory — a different retrieval path from the NVD CVE scan: Valyu returns recent *web intelligence* (exploit reports, vendor advisories, compliance changes), NVD returns the CVE corpus itself.
+
+### How a brief is built (`ThreatIntelService`)
+
+1. **Query planning** — reuses the `IsCveSearchable` asset-type fields (same mechanism as `RegexCveMappingService`) to build up to ~6 targeted queries: vendor/product queries from the highest-risk assets, "actively exploited" queries for the org's top active CVEs, and one compliance-preset sweep.
+2. **Execution** — all queries run in parallel against `POST /v1/search` with the `cybersecurity` / `compliance` source presets and a `start_date` window (1–30 days). Results are deduplicated by URL.
+3. **AI rerank (optional)** — when `UseAiRerank` is on and `Organization.IsAiEnabled`, OpenRouter scores every finding 0–100 against the org's actual inventory; findings without inventory relevance sink.
+4. **Output** — findings carry title, citation URL, snippet, source, publication date, Valyu relevance, AI score, matched CVEs/assets, and the total credit cost. Empty results produce an explicit "no fresh intel" notice rather than a blank page.
+
+Briefs are cached in memory for 15 minutes per org + parameters so re-clicking doesn't re-spend credits. Nothing is persisted to the database.
+
+### DeepResearch audit reports (async)
+
+The `/intel` **Audit Reports** tab runs Valyu **DeepResearch** (`POST /v1/deepresearch/tasks`) — the right tool for a formal deliverable, vs raw Search for the seconds-scale brief. `ThreatIntelService.BuildAuditBriefAsync` composes the research brief from the org's inventory (assets grouped with searchable properties + the active CVE list) and pins the report structure (exec summary → exploited CVEs → advisories by product → threat landscape → compliance → prioritised actions, citations mandatory, refuse thin sections).
+
+Flow mirrors scan jobs: `IntelReport` row created with `StartedAt` timestamp → `BackgroundDeepResearchWorker` polls Valyu every 10s, hydrating status/step progress → on completion stores report markdown, PDF link, cost, and source count, and raises a `ReportCompleted` SignalR toast. Queries run from the UI poll every 8s while a report is in flight.
+
+> **Empirical note:** Valyu's `cybersecurity` search preset resolves to their NVD CVE corpus, whose records have no publication dates — a date window then filters out everything. Fresh-intel searches therefore run unscoped with a date window instead. Also, `progress` steps in the status response don't always appear; the UI falls back to an indeterminate shimmer + elapsed timer.
+
+### Configuration
+
+- **Development:** `dotnet user-secrets set "Valyu:ApiKey" "<key>"` (get a key at https://platform.valyu.ai — free credits on signup).
+- **Production:** environment variable `Valyu__ApiKey` or Azure Key Vault.
+- `GET /api/intel/status` and the `/intel` page degrade gracefully when the key is missing.
 
 ---
 
