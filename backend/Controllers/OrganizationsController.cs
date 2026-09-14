@@ -17,11 +17,13 @@ namespace backend.Controllers;
 public class OrganizationsController : TenantControllerBase
 {
     private readonly IAssetTypeTemplateService _templateService;
+    private readonly IAuditLogService _audit;
 
-    public OrganizationsController(AppDbContext db, UserManager<AppUser> userManager, IAssetTypeTemplateService templateService)
+    public OrganizationsController(AppDbContext db, UserManager<AppUser> userManager, IAssetTypeTemplateService templateService, IAuditLogService audit)
         : base(db, userManager)
     {
         _templateService = templateService;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -149,6 +151,10 @@ public class OrganizationsController : TenantControllerBase
         // Seed built-in asset type templates for the new org
         await _templateService.SeedBuiltInTypesAsync(org.Id);
 
+        await _audit.LogAsync("OrganizationCreated", "Organization", org.Id.ToString(),
+            null,
+            new { org.Name, org.IsActive, org.IsAiEnabled });
+
         return Ok(new OrganizationResponse
         {
             Id = org.Id,
@@ -175,6 +181,16 @@ public class OrganizationsController : TenantControllerBase
         var org = await _db.Organizations.FirstOrDefaultAsync(o => o.Id == id);
         if (org == null) return NotFound();
 
+        var before = new
+        {
+            org.Name,
+            org.IsAiEnabled,
+            org.AiChunkSize,
+            org.AiMaxCvesPerAsset,
+            org.AiMinScore,
+            HasNvdApiKey = !string.IsNullOrEmpty(org.NvdApiKey)
+        };
+
         org.Name = request.Name;
         org.Description = request.Description;
         org.NvdApiKey = request.NvdApiKey;
@@ -184,6 +200,19 @@ public class OrganizationsController : TenantControllerBase
         org.AiMinScore = request.AiMinScore >= 0 ? request.AiMinScore : 0;
 
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("OrganizationUpdated", "Organization", org.Id.ToString(),
+            before,
+            new
+            {
+                org.Name,
+                org.IsAiEnabled,
+                org.AiChunkSize,
+                org.AiMaxCvesPerAsset,
+                org.AiMinScore,
+                HasNvdApiKey = !string.IsNullOrEmpty(org.NvdApiKey)
+            });
+
         return NoContent();
     }
 
@@ -201,8 +230,13 @@ public class OrganizationsController : TenantControllerBase
 
         var reassignedCount = await _templateService.ReassignAssetsToUnknownTypeAsync(id);
 
+        var before = new { org.Name, org.IsActive };
         org.IsActive = false;
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("OrganizationDeleted", "Organization", org.Id.ToString(),
+            before,
+            new { IsActive = false });
 
         return Ok(new { message = $"Organization deleted. {reassignedCount} asset(s) reassigned to 'Unknown'." });
     }
@@ -224,6 +258,10 @@ public class OrganizationsController : TenantControllerBase
 
         org.IsActive = true;
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("OrganizationReactivated", "Organization", org.Id.ToString(),
+            new { org.Name, IsActive = false },
+            new { org.Name, IsActive = true });
 
         return Ok(new OrganizationResponse
         {

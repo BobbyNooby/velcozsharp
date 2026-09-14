@@ -2,6 +2,7 @@ using backend.Data;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
+using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -14,9 +15,12 @@ namespace backend.Controllers;
 [Authorize]
 public class UserManagementController : TenantControllerBase
 {
-    public UserManagementController(AppDbContext db, UserManager<AppUser> userManager)
+    private readonly IAuditLogService _audit;
+
+    public UserManagementController(AppDbContext db, UserManager<AppUser> userManager, IAuditLogService audit)
         : base(db, userManager)
     {
+        _audit = audit;
     }
 
     [HttpGet]
@@ -91,16 +95,21 @@ public class UserManagementController : TenantControllerBase
             }
         }
 
-        _db.UserOrganizations.Add(new UserOrganization
+        var membership = new UserOrganization
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
             OrganizationId = orgId.Value,
             Role = request.Role,
             IsDefault = false
-        });
+        };
+        _db.UserOrganizations.Add(membership);
 
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("MemberInvited", "UserOrganization", membership.Id.ToString(),
+            null,
+            new { UserId = user.Id, user.Email, Role = request.Role });
 
         return Ok(new
         {
@@ -133,8 +142,14 @@ public class UserManagementController : TenantControllerBase
         if (membership == null)
             return NotFound(new { message = "User is not a member of this organization" });
 
+        var before = new { membership.Role };
+
         membership.Role = request.Role;
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("MemberRoleChanged", "UserOrganization", membership.Id.ToString(),
+            before,
+            new { Role = request.Role });
 
         // Sync global Identity role for simple scenarios
         var user = await _userManager.FindByIdAsync(userId.ToString());
@@ -170,8 +185,12 @@ public class UserManagementController : TenantControllerBase
         if (membership == null)
             return NotFound(new { message = "User is not a member of this organization" });
 
+        var before = new { membership.UserId, membership.Role };
+
         _db.UserOrganizations.Remove(membership);
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("MemberRemoved", "UserOrganization", membership.Id.ToString(), before, null);
 
         return NoContent();
     }

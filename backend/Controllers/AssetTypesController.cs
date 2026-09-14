@@ -18,11 +18,13 @@ namespace backend.Controllers;
 public class AssetTypesController : TenantControllerBase
 {
     private readonly IAssetTypeTemplateService _templateService;
+    private readonly IAuditLogService _audit;
 
-    public AssetTypesController(AppDbContext db, UserManager<AppUser> userManager, IAssetTypeTemplateService templateService)
+    public AssetTypesController(AppDbContext db, UserManager<AppUser> userManager, IAssetTypeTemplateService templateService, IAuditLogService audit)
         : base(db, userManager)
     {
         _templateService = templateService;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -114,6 +116,10 @@ public class AssetTypesController : TenantControllerBase
         _db.AssetTypeDefinitions.Add(assetType);
         await _db.SaveChangesAsync();
 
+        await _audit.LogAsync("AssetTypeCreated", "AssetType", assetType.Id.ToString(),
+            null,
+            new { assetType.Name, FieldCount = assetType.Fields.Count });
+
         return Ok(assetType.ToResponse());
     }
 
@@ -128,6 +134,8 @@ public class AssetTypesController : TenantControllerBase
             .FirstOrDefaultAsync(at => at.Id == id && at.IsActive);
 
         if (assetType == null) return NotFound();
+
+        var before = new { assetType.Name, FieldCount = assetType.Fields.Count };
 
         assetType.Name = request.Name;
         assetType.Description = request.Description;
@@ -148,6 +156,11 @@ public class AssetTypesController : TenantControllerBase
         }).ToList();
 
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("AssetTypeUpdated", "AssetType", assetType.Id.ToString(),
+            before,
+            new { assetType.Name, FieldCount = assetType.Fields.Count });
+
         return NoContent();
     }
 
@@ -167,8 +180,13 @@ public class AssetTypesController : TenantControllerBase
 
         var reassignedCount = await _templateService.ReassignAssetsToUnknownTypeAsync(orgId.Value, id);
 
+        var before = new { assetType.Name, assetType.IsActive };
         assetType.IsActive = false;
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("AssetTypeDeleted", "AssetType", assetType.Id.ToString(),
+            before,
+            new { assetType.Name, IsActive = false });
 
         return Ok(new { message = $"Asset type deleted. {reassignedCount} asset(s) reassigned to 'Unknown'." });
     }
@@ -191,6 +209,10 @@ public class AssetTypesController : TenantControllerBase
 
         assetType.IsActive = true;
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("AssetTypeReactivated", "AssetType", assetType.Id.ToString(),
+            new { assetType.Name, IsActive = false },
+            new { assetType.Name, IsActive = true });
 
         return Ok(assetType.ToResponse());
     }

@@ -63,7 +63,7 @@ public class AssetsController : TenantControllerBase
             query = query.Where(a => a.Status == status.Value);
 
         if (!string.IsNullOrWhiteSpace(severity))
-            query = query.Where(a => a.HighestSeverity == severity);
+            query = query.Where(a => a.Vulnerabilities.Any(av => av.Vulnerability.Severity != null && av.Vulnerability.Severity.ToLower() == severity.ToLower()));
 
         if (!string.IsNullOrWhiteSpace(criticality) && Enum.TryParse<AssetCriticality>(criticality, true, out var crit))
             query = query.Where(a => a.Criticality == crit);
@@ -87,19 +87,19 @@ public class AssetsController : TenantControllerBase
                 : query.Where(a => !a.Vulnerabilities.Any());
         }
 
-        // Sorting
+        // Sorting (ThenBy Name tiebreaker keeps pagination stable across pages)
         var descending = sortOrder?.ToLower() != "asc";
-        query = sortBy?.ToLower() switch
+        var ordered = sortBy?.ToLower() switch
         {
             "name" => descending ? query.OrderByDescending(a => a.Name) : query.OrderBy(a => a.Name),
-            "cvss" => descending ? query.OrderByDescending(a => a.HighestCvssScore) : query.OrderBy(a => a.HighestCvssScore),
-            "vulncount" => descending ? query.OrderByDescending(a => a.Vulnerabilities.Count) : query.OrderBy(a => a.Vulnerabilities.Count),
-            "criticality" => descending ? query.OrderByDescending(a => a.Criticality) : query.OrderBy(a => a.Criticality),
-            "lastscanned" => descending ? query.OrderByDescending(a => a.LastScannedAt) : query.OrderBy(a => a.LastScannedAt),
-            _ => descending ? query.OrderByDescending(a => a.CreatedAt) : query.OrderBy(a => a.CreatedAt)
+            "cvss" => descending ? query.OrderByDescending(a => a.Vulnerabilities.Max(av => (double?)av.Vulnerability.CvssScore)).ThenBy(a => a.Name) : query.OrderBy(a => a.Vulnerabilities.Max(av => (double?)av.Vulnerability.CvssScore)).ThenBy(a => a.Name),
+            "vulncount" => descending ? query.OrderByDescending(a => a.Vulnerabilities.Count).ThenBy(a => a.Name) : query.OrderBy(a => a.Vulnerabilities.Count).ThenBy(a => a.Name),
+            "criticality" => descending ? query.OrderByDescending(a => a.Criticality).ThenBy(a => a.Name) : query.OrderBy(a => a.Criticality).ThenBy(a => a.Name),
+            "lastscanned" => descending ? query.OrderByDescending(a => a.LastScannedAt).ThenBy(a => a.Name) : query.OrderBy(a => a.LastScannedAt).ThenBy(a => a.Name),
+            _ => descending ? query.OrderByDescending(a => a.CreatedAt).ThenBy(a => a.Name) : query.OrderBy(a => a.CreatedAt).ThenBy(a => a.Name)
         };
 
-        var result = await query
+        var result = await ordered
             .Select(a => new AssetResponse
             {
                 Id = a.Id,
@@ -114,8 +114,12 @@ public class AssetsController : TenantControllerBase
                 IsCriticalityAuto = a.IsCriticalityAuto,
                 Tags = a.Tags ?? new List<string>(),
                 Properties = a.Properties,
-                HighestCvssScore = a.HighestCvssScore,
-                HighestSeverity = a.HighestSeverity,
+                // Computed live from CVE links (the denormalized columns are not reliably maintained)
+                HighestCvssScore = a.Vulnerabilities.Max(av => (double?)av.Vulnerability.CvssScore),
+                HighestSeverity = a.Vulnerabilities
+                    .OrderByDescending(av => av.Vulnerability.CvssScore ?? 0)
+                    .Select(av => av.Vulnerability.Severity)
+                    .FirstOrDefault(),
                 LastScannedAt = a.LastScannedAt,
                 VulnerabilityCount = a.Vulnerabilities.Count,
                 CreatedAt = a.CreatedAt,
@@ -123,7 +127,24 @@ public class AssetsController : TenantControllerBase
             })
             .ToPagedResultAsync(page, pageSize);
 
-        return Ok(result);
+        // Org-wide stats for the current filter set, as SQL aggregates (not row loads).
+        // Clean = filtered asset total minus the ones with at least one CVE.
+        var withCves = await query.CountAsync(a => a.Vulnerabilities.Any());
+        var totalCves = await query.SumAsync(a => a.Vulnerabilities.Count());
+
+        return Ok(new AssetListResponse
+        {
+            Items = result.Items,
+            TotalCount = result.TotalCount,
+            Page = result.Page,
+            PageSize = result.PageSize,
+            Stats = new AssetListStats
+            {
+                WithCves = withCves,
+                TotalCves = totalCves,
+                Clean = result.TotalCount - withCves
+            }
+        });
     }
 
     [HttpGet("count")]
@@ -147,7 +168,7 @@ public class AssetsController : TenantControllerBase
         if (departmentId.HasValue) query = query.Where(a => a.DepartmentId == departmentId.Value);
         if (assetTypeId.HasValue) query = query.Where(a => a.AssetTypeId == assetTypeId.Value);
         if (status.HasValue) query = query.Where(a => a.Status == status.Value);
-        if (!string.IsNullOrWhiteSpace(severity)) query = query.Where(a => a.HighestSeverity == severity);
+        if (!string.IsNullOrWhiteSpace(severity)) query = query.Where(a => a.Vulnerabilities.Any(av => av.Vulnerability.Severity != null && av.Vulnerability.Severity.ToLower() == severity.ToLower()));
         if (!string.IsNullOrWhiteSpace(criticality) && Enum.TryParse<AssetCriticality>(criticality, true, out var crit))
             query = query.Where(a => a.Criticality == crit);
         if (!string.IsNullOrWhiteSpace(tag))
@@ -195,8 +216,12 @@ public class AssetsController : TenantControllerBase
                 IsCriticalityAuto = a.IsCriticalityAuto,
                 Tags = a.Tags ?? new List<string>(),
                 Properties = a.Properties,
-                HighestCvssScore = a.HighestCvssScore,
-                HighestSeverity = a.HighestSeverity,
+                // Computed live from CVE links (the denormalized columns are not reliably maintained)
+                HighestCvssScore = a.Vulnerabilities.Max(av => (double?)av.Vulnerability.CvssScore),
+                HighestSeverity = a.Vulnerabilities
+                    .OrderByDescending(av => av.Vulnerability.CvssScore ?? 0)
+                    .Select(av => av.Vulnerability.Severity)
+                    .FirstOrDefault(),
                 LastScannedAt = a.LastScannedAt,
                 VulnerabilityCount = a.Vulnerabilities.Count,
                 Vulnerabilities = a.Vulnerabilities.Select(av => new VulnerabilityResponse
@@ -281,7 +306,8 @@ public class AssetsController : TenantControllerBase
             AssetTypeId = request.AssetTypeId,
             DepartmentId = request.DepartmentId,
             Status = AssetStatus.Active,
-            Criticality = AssetCriticality.Medium,
+            // Respect the caller's choice; IsCriticalityAuto stays true so scans may still adjust it.
+            Criticality = request.Criticality,
             IsCriticalityAuto = true,
             Tags = NormalizeTags(request.Tags),
             Properties = request.Properties,

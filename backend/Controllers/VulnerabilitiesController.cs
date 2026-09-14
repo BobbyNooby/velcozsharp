@@ -52,7 +52,8 @@ public class VulnerabilitiesController : TenantControllerBase
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(severity))
-            query = query.Where(av => av.Vulnerability.Severity == severity);
+            // Severity is stored uppercase ("CRITICAL"); compare case-insensitively
+            query = query.Where(av => av.Vulnerability.Severity != null && av.Vulnerability.Severity.ToLower() == severity.ToLower());
 
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(av => av.Status == status);
@@ -78,15 +79,30 @@ public class VulnerabilitiesController : TenantControllerBase
         }
 
         var descending = sortOrder?.ToLower() != "asc";
-        query = sortBy?.ToLower() switch
+        var ordered = sortBy?.ToLower() switch
         {
-            "detected" => descending ? query.OrderByDescending(av => av.DetectedAt) : query.OrderBy(av => av.DetectedAt),
-            "published" => descending ? query.OrderByDescending(av => av.Vulnerability.PublishedDate) : query.OrderBy(av => av.Vulnerability.PublishedDate),
-            "cveid" => descending ? query.OrderByDescending(av => av.Vulnerability.CveId) : query.OrderBy(av => av.Vulnerability.CveId),
-            _ => descending ? query.OrderByDescending(av => av.Vulnerability.CvssScore) : query.OrderBy(av => av.Vulnerability.CvssScore)
+            "detected" => descending
+                ? query.OrderByDescending(av => av.DetectedAt).ThenBy(av => av.Vulnerability.CveId)
+                : query.OrderBy(av => av.DetectedAt).ThenBy(av => av.Vulnerability.CveId),
+            "published" => descending
+                ? query.OrderByDescending(av => av.Vulnerability.PublishedDate).ThenBy(av => av.Vulnerability.CveId)
+                : query.OrderBy(av => av.Vulnerability.PublishedDate).ThenBy(av => av.Vulnerability.CveId),
+            "cveid" => descending
+                ? query.OrderByDescending(av => av.Vulnerability.CveId)
+                : query.OrderBy(av => av.Vulnerability.CveId),
+            // Default: severity rank (Critical > High > Medium > Low), then CVSS DESC, then CveId ASC
+            // so pagination is stable across pages.
+            _ => query
+                .OrderByDescending(av =>
+                    av.Vulnerability.Severity != null && av.Vulnerability.Severity.ToLower() == "critical" ? 4 :
+                    av.Vulnerability.Severity != null && av.Vulnerability.Severity.ToLower() == "high" ? 3 :
+                    av.Vulnerability.Severity != null && av.Vulnerability.Severity.ToLower() == "medium" ? 2 :
+                    av.Vulnerability.Severity != null && av.Vulnerability.Severity.ToLower() == "low" ? 1 : 0)
+                .ThenByDescending(av => av.Vulnerability.CvssScore)
+                .ThenBy(av => av.Vulnerability.CveId)
         };
 
-        var result = await query
+        var result = await ordered
             .Select(av => new VulnerabilityListItemResponse
             {
                 AssetId = av.AssetId,
@@ -109,7 +125,22 @@ public class VulnerabilitiesController : TenantControllerBase
             })
             .ToPagedResultAsync(page, pageSize);
 
-        return Ok(result);
+        // Org-wide stats for the current filter set, as SQL aggregates (not row loads).
+        var stats = new VulnerabilityListStats
+        {
+            Active = await query.CountAsync(av => av.Status == "Active"),
+            Critical = await query.CountAsync(av => av.Vulnerability.Severity != null && av.Vulnerability.Severity.ToLower() == "critical"),
+            High = await query.CountAsync(av => av.Vulnerability.Severity != null && av.Vulnerability.Severity.ToLower() == "high")
+        };
+
+        return Ok(new VulnerabilityListResponse
+        {
+            Items = result.Items,
+            TotalCount = result.TotalCount,
+            Page = result.Page,
+            PageSize = result.PageSize,
+            Stats = stats
+        });
     }
 
     [HttpGet("count")]

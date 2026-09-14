@@ -16,21 +16,27 @@ public class SeedController : TenantControllerBase
 {
     private readonly IAssetTypeTemplateService _templateService;
     private readonly ILogger<SeedController> _logger;
+    private readonly IHostEnvironment _hostEnvironment;
 
     public SeedController(
         AppDbContext db,
         UserManager<AppUser> userManager,
         IAssetTypeTemplateService templateService,
-        ILogger<SeedController> logger)
+        ILogger<SeedController> logger,
+        IHostEnvironment hostEnvironment)
         : base(db, userManager)
     {
         _templateService = templateService;
         _logger = logger;
+        _hostEnvironment = hostEnvironment;
     }
 
     [HttpPost("demo-assets")]
     public async Task<IActionResult> SeedDemoAssets()
     {
+        if (!_hostEnvironment.IsDevelopment())
+            return NotFound(new { message = "Not found" });
+
         var auth = await RequireOrgAdminAsync();
         if (auth != null) return auth;
 

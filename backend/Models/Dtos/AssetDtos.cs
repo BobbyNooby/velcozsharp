@@ -58,3 +58,15 @@ public class UpdateVulnerabilityStatusRequest
 {
     public string Status { get; set; } = "";
 }
+
+public class AssetListStats
+{
+    public int WithCves { get; set; }
+    public int TotalCves { get; set; }
+    public int Clean { get; set; }
+}
+
+public class AssetListResponse : PagedResult<AssetResponse>
+{
+    public AssetListStats Stats { get; set; } = new();
+}

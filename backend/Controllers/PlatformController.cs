@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace backend.Controllers;
 
@@ -18,11 +19,68 @@ public class PlatformController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly UserManager<AppUser> _userManager;
+    private static readonly JsonSerializerOptions AuditJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
 
     public PlatformController(AppDbContext db, UserManager<AppUser> userManager)
     {
         _db = db;
         _userManager = userManager;
+    }
+
+    /// <summary>
+    /// Writes an audit record attributed to a specific organization. Unlike IAuditLogService
+    /// (which resolves the org from the X-Organization-Id header and drops records when absent),
+    /// platform actions must be attributed to the affected org, so rows are written directly.
+    /// </summary>
+    private async Task LogOrgAuditAsync(Guid organizationId, string action, string entityType, string entityId, object? before = null, object? after = null)
+    {
+        _db.AuditLogs.Add(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = organizationId,
+            Action = action,
+            EntityType = entityType,
+            EntityId = entityId,
+            BeforeJson = before == null ? null : JsonSerializer.Serialize(before, AuditJsonOptions),
+            AfterJson = after == null ? null : JsonSerializer.Serialize(after, AuditJsonOptions),
+            ChangedByUserId = _userManager.GetUserId(User),
+            Timestamp = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Logs a platform action on a user into the audit log of every organization the user belongs to.
+    /// </summary>
+    private async Task LogUserAuditAsync(AppUser user, string action, object? before = null, object? after = null)
+    {
+        var orgIds = await _db.UserOrganizations
+            .IgnoreQueryFilters()
+            .Where(uo => uo.UserId == user.Id)
+            .Select(uo => uo.OrganizationId)
+            .ToListAsync();
+
+        foreach (var orgId in orgIds)
+        {
+            _db.AuditLogs.Add(new AuditLog
+            {
+                Id = Guid.NewGuid(),
+                OrganizationId = orgId,
+                Action = action,
+                EntityType = "User",
+                EntityId = user.Id.ToString(),
+                BeforeJson = before == null ? null : JsonSerializer.Serialize(before, AuditJsonOptions),
+                AfterJson = after == null ? null : JsonSerializer.Serialize(after, AuditJsonOptions),
+                ChangedByUserId = _userManager.GetUserId(User),
+                Timestamp = DateTime.UtcNow
+            });
+        }
+
+        if (orgIds.Count > 0)
+            await _db.SaveChangesAsync();
     }
 
     [HttpGet("stats")]
@@ -110,8 +168,16 @@ public class PlatformController : ControllerBase
         var org = await _db.Organizations.FindAsync(id);
         if (org == null) return NotFound();
 
+        var before = new { org.Name, org.IsActive };
+
         org.IsActive = request.IsActive;
         await _db.SaveChangesAsync();
+
+        await LogOrgAuditAsync(org.Id,
+            request.IsActive ? "PlatformOrganizationActivated" : "PlatformOrganizationSuspended",
+            "Organization", org.Id.ToString(),
+            before,
+            new { org.Name, org.IsActive });
 
         return NoContent();
     }
@@ -126,10 +192,16 @@ public class PlatformController : ControllerBase
 
         if (org == null) return NotFound();
 
+        var before = new { org.Name, org.IsActive, MemberCount = org.UserOrganizations.Count };
+
         // Soft delete: mark inactive and remove memberships so users can't access it
         org.IsActive = false;
         _db.UserOrganizations.RemoveRange(org.UserOrganizations);
         await _db.SaveChangesAsync();
+
+        await LogOrgAuditAsync(org.Id, "PlatformOrganizationDeleted", "Organization", org.Id.ToString(),
+            before,
+            new { IsActive = false, MembersRemoved = before.MemberCount });
 
         return NoContent();
     }
@@ -227,6 +299,8 @@ public class PlatformController : ControllerBase
         if (!addResult.Succeeded)
             return BadRequest(new { message = string.Join(", ", addResult.Errors.Select(e => e.Description)) });
 
+        await LogUserAuditAsync(user, "PlatformUserPasswordReset");
+
         return Ok(new ResetUserPasswordResponse { NewPassword = newPassword });
     }
 
@@ -251,6 +325,8 @@ public class PlatformController : ControllerBase
         if (!addResult.Succeeded)
             return BadRequest(new { message = string.Join(", ", addResult.Errors.Select(e => e.Description)) });
 
+        await LogUserAuditAsync(user, "PlatformUserPasswordSet");
+
         return Ok(new { message = "Password set successfully" });
     }
 
@@ -260,7 +336,14 @@ public class PlatformController : ControllerBase
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user == null) return NotFound();
 
+        var wasLockedOut = user.LockoutEnd != null && user.LockoutEnd > DateTimeOffset.UtcNow;
+
         await _userManager.SetLockoutEndDateAsync(user, DateTimeOffset.UtcNow.AddYears(100));
+
+        await LogUserAuditAsync(user, "PlatformUserLocked",
+            new { user.Email, IsLockedOut = wasLockedOut },
+            new { user.Email, IsLockedOut = true });
+
         return NoContent();
     }
 
@@ -270,8 +353,15 @@ public class PlatformController : ControllerBase
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user == null) return NotFound();
 
+        var wasLockedOut = user.LockoutEnd != null && user.LockoutEnd > DateTimeOffset.UtcNow;
+
         await _userManager.SetLockoutEndDateAsync(user, null);
         await _userManager.ResetAccessFailedCountAsync(user);
+
+        await LogUserAuditAsync(user, "PlatformUserUnlocked",
+            new { user.Email, IsLockedOut = wasLockedOut },
+            new { user.Email, IsLockedOut = false });
+
         return NoContent();
     }
 

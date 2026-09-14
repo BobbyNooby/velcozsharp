@@ -3,6 +3,7 @@ using backend.Infrastructure.Pagination;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
+using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -15,9 +16,12 @@ namespace backend.Controllers;
 [Authorize]
 public class DepartmentsController : TenantControllerBase
 {
-    public DepartmentsController(AppDbContext db, UserManager<AppUser> userManager)
+    private readonly IAuditLogService _audit;
+
+    public DepartmentsController(AppDbContext db, UserManager<AppUser> userManager, IAuditLogService audit)
         : base(db, userManager)
     {
+        _audit = audit;
     }
 
     [HttpGet]
@@ -105,6 +109,10 @@ public class DepartmentsController : TenantControllerBase
         _db.Departments.Add(department);
         await _db.SaveChangesAsync();
 
+        await _audit.LogAsync("DepartmentCreated", "Department", department.Id.ToString(),
+            null,
+            new { department.Name });
+
         return Ok(new DepartmentResponse
         {
             Id = department.Id,
@@ -122,8 +130,14 @@ public class DepartmentsController : TenantControllerBase
         var department = await _db.Departments.FirstOrDefaultAsync(d => d.Id == id);
         if (department == null) return NotFound();
 
+        var before = new { department.Name };
+
         department.Name = request.Name;
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("DepartmentUpdated", "Department", department.Id.ToString(),
+            before,
+            new { department.Name });
 
         return NoContent();
     }
@@ -137,8 +151,13 @@ public class DepartmentsController : TenantControllerBase
         var department = await _db.Departments.FirstOrDefaultAsync(d => d.Id == id);
         if (department == null) return NotFound();
 
+        var before = new { department.Name, department.IsActive };
         department.IsActive = false;
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("DepartmentDeleted", "Department", department.Id.ToString(),
+            before,
+            new { department.Name, IsActive = false });
 
         return NoContent();
     }
@@ -161,6 +180,10 @@ public class DepartmentsController : TenantControllerBase
 
         department.IsActive = true;
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("DepartmentReactivated", "Department", department.Id.ToString(),
+            new { department.Name, IsActive = false },
+            new { department.Name, IsActive = true });
 
         return Ok(new DepartmentResponse
         {

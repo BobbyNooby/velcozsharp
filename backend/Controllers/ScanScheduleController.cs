@@ -3,6 +3,7 @@ using backend.Infrastructure.Pagination;
 using backend.Models.Dtos;
 using backend.Models.Entities;
 using backend.Models.Enums;
+using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -44,9 +45,12 @@ public class ScanScheduleResponse
 [Authorize]
 public class ScanScheduleController : TenantControllerBase
 {
-    public ScanScheduleController(AppDbContext db, UserManager<AppUser> userManager)
+    private readonly IAuditLogService _audit;
+
+    public ScanScheduleController(AppDbContext db, UserManager<AppUser> userManager, IAuditLogService audit)
         : base(db, userManager)
     {
+        _audit = audit;
     }
 
     [HttpGet]
@@ -155,6 +159,10 @@ public class ScanScheduleController : TenantControllerBase
         _db.RecurringScanConfigs.Add(schedule);
         await _db.SaveChangesAsync();
 
+        await _audit.LogAsync("ScanScheduleCreated", "ScanSchedule", schedule.Id.ToString(),
+            null,
+            new { schedule.Name, schedule.CronExpression, Scope = schedule.Scope.ToString() });
+
         return CreatedAtAction(nameof(GetById), new { id = schedule.Id }, new ScanScheduleResponse
         {
             Id = schedule.Id,
@@ -226,8 +234,12 @@ public class ScanScheduleController : TenantControllerBase
 
         if (schedule == null) return NotFound();
 
+        var before = new { schedule.Name, schedule.CronExpression, Scope = schedule.Scope.ToString() };
+
         _db.RecurringScanConfigs.Remove(schedule);
         await _db.SaveChangesAsync();
+
+        await _audit.LogAsync("ScanScheduleDeleted", "ScanSchedule", schedule.Id.ToString(), before, null);
 
         return NoContent();
     }
