@@ -24,6 +24,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     public DbSet<RecurringScanConfig> RecurringScanConfigs => Set<RecurringScanConfig>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<UserOrganization> UserOrganizations => Set<UserOrganization>();
+    public DbSet<IntelReport> IntelReports => Set<IntelReport>();
 
     public AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext? tenantContext = null)
         : base(options)
@@ -66,6 +67,9 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
 
         modelBuilder.Entity<Notification>()
             .HasQueryFilter(n => n.OrganizationId == CurrentOrganizationId);
+
+        modelBuilder.Entity<IntelReport>()
+            .HasQueryFilter(r => r.OrganizationId == CurrentOrganizationId);
 
         modelBuilder.Entity<Notification>()
             .HasIndex(n => new { n.OrganizationId, n.IsRead, n.CreatedAt });
