@@ -243,6 +243,34 @@ public class AssetTypeTemplateService : IAssetTypeTemplateService
             },
             new()
             {
+                Name = "Container Host",
+                Description = "Docker and Kubernetes cluster nodes",
+                IconName = "box",
+                Fields = new List<TemplateField>
+                {
+                    new("hostname", "text", true, false),
+                    new("operating_system", "text", true, true),
+                    new("os_version", "text", false, true),
+                    new("kubernetes_version", "text", true, true),
+                    new("container_runtime", "text", false, true),
+                }
+            },
+            new()
+            {
+                Name = "Backup Server",
+                Description = "Backup and disaster recovery infrastructure",
+                IconName = "server",
+                Fields = new List<TemplateField>
+                {
+                    new("hostname", "text", true, false),
+                    new("operating_system", "text", true, true),
+                    new("os_version", "text", false, true),
+                    new("backup_software", "text", true, true),
+                    new("backup_software_version", "text", false, true),
+                }
+            },
+            new()
+            {
                 Name = "Custom",
                 Description = "Blank template — define your own fields",
                 IconName = "box",
