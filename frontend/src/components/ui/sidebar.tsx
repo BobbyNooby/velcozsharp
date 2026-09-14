@@ -116,7 +116,7 @@ export const Sidebar = React.forwardRef<
       data-variant={variant}
       data-side={side}
       className={cn(
-        "hidden h-svh w-[var(--sidebar-width)] flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-linear md:flex",
+        "sticky top-0 hidden h-svh w-[var(--sidebar-width)] flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-linear md:flex",
         !open && "w-[var(--sidebar-width-icon)]",
         variant === "floating" && "m-2 rounded-lg border",
         variant === "inset" && "m-2 rounded-lg",

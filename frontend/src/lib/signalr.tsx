@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, ReactN
 import * as signalR from "@microsoft/signalr";
 import { useToast } from "@/lib/toast";
 import { useOrg } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 
 type NotificationMessage = {
@@ -25,6 +26,7 @@ const SignalRContext = createContext<SignalRContextValue>({ connection: null, co
 
 export function SignalRProvider({ children }: { children: ReactNode }) {
   const { orgId, authReady } = useOrg();
+  const { isAuthenticated } = useAuth();
   const { addToast } = useToast();
   const router = useRouter();
   const [connected, setConnected] = useState(false);
@@ -39,7 +41,13 @@ export function SignalRProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!authReady) return;
+    // The hub requires the auth cookie, so only connect for authenticated
+    // users — connecting from public pages (e.g. /login) just spams
+    // "negotiation failed: 401" console errors. `isAuthenticated` flips true
+    // right after login (AuthConsumer.refreshUser), which re-runs this effect
+    // and establishes the connection — no page refresh needed. Logout tears
+    // the connection down via the cleanup below.
+    if (!authReady || !isAuthenticated) return;
 
     const conn = new signalR.HubConnectionBuilder()
       .withUrl(`${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:5038/api").replace("/api", "")}/hubs/notifications`, {
@@ -106,7 +114,7 @@ export function SignalRProvider({ children }: { children: ReactNode }) {
       conn.stop();
       connectionRef.current = null;
     };
-  }, [authReady, addToast, router]);
+  }, [authReady, isAuthenticated, addToast, router]);
 
   // Join/leave org group when org changes
   useEffect(() => {

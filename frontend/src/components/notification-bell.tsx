@@ -110,10 +110,13 @@ export default function NotificationBell() {
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger className="relative inline-flex items-center justify-center h-9 w-9 rounded-md text-sm font-medium transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+      <DropdownMenuTrigger
+        aria-label={`Notifications${count ? ` (${count} unread)` : ""}`}
+        className="relative inline-flex items-center justify-center h-9 w-9 rounded-md text-sm font-medium transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
         <BellIcon className="h-5 w-5" />
         {count > 0 && (
-          <Badge className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center px-1 text-xs bg-red-500 text-white border-0">
+          <Badge className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center px-1 text-xs bg-destructive text-white border-0" aria-hidden="true">
             {count > 99 ? "99+" : count}
           </Badge>
         )}
@@ -124,7 +127,7 @@ export default function NotificationBell() {
           {count > 0 && (
             <button
               onClick={markAllRead}
-              className="text-xs text-blue-600 hover:underline"
+              className="text-xs text-primary hover:underline"
             >
               Mark all read
             </button>
@@ -132,7 +135,7 @@ export default function NotificationBell() {
         </div>
         <DropdownMenuSeparator />
         {recent.length === 0 ? (
-          <div className="px-2 py-4 text-sm text-gray-500 text-center">
+          <div className="px-2 py-4 text-sm text-muted-foreground text-center">
             No notifications yet.
           </div>
         ) : (
@@ -143,34 +146,39 @@ export default function NotificationBell() {
               onClick={() => onClickNotification(n)}
             >
               <div className="flex items-center gap-2 w-full">
-                <span className={`text-sm font-medium ${n.isRead ? "text-gray-600" : "text-foreground"}`}>
+                <span className={`text-sm font-medium ${n.isRead ? "text-muted-foreground" : "text-foreground"}`}>
                   {n.title}
                 </span>
-                {!n.isRead && <span className="w-2 h-2 rounded-full bg-blue-500" />}
+                {!n.isRead && <span className="w-2 h-2 rounded-full bg-primary" />}
               </div>
-              <p className="text-xs text-gray-500 line-clamp-2">{n.message}</p>
+              <p className="text-xs text-muted-foreground line-clamp-2">{n.message}</p>
               <div className="flex items-center justify-between w-full mt-1">
-                <span className="text-[10px] text-gray-400">
+                <span className="text-[10px] text-muted-foreground">
                   {new Date(n.createdAt).toLocaleTimeString()}
                 </span>
                 {!n.isRead && (
-                  <button
+                  // Plain span instead of a <button>: a nested button inside a
+                  // menu item is invalid interactive nesting. Clicking the item
+                  // itself also marks the notification read, so keyboard users
+                  // activate the item (Enter) for the same behavior.
+                  <span
                     onClick={(e) => markRead(e, n.id)}
-                    className="text-[10px] text-blue-600 hover:underline"
+                    className="text-[10px] text-primary hover:underline cursor-pointer"
                   >
                     Mark read
-                  </button>
+                  </span>
                 )}
               </div>
             </DropdownMenuItem>
           ))
         )}
         <DropdownMenuSeparator />
-        <Link href="/notifications" onClick={() => setOpen(false)}>
-          <DropdownMenuItem className="cursor-pointer justify-center text-sm text-blue-600">
-            View all notifications
-          </DropdownMenuItem>
-        </Link>
+        {/* Single valid interactive element: the Link is rendered AS the menu
+            item (same pattern as user-menu.tsx) instead of being nested
+            around it. Base UI closes the menu on item click. */}
+        <DropdownMenuItem asChild className="cursor-pointer justify-center text-sm text-primary">
+          <Link href="/notifications">View all notifications</Link>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 const DialogContext = React.createContext<{
   open: boolean;
   setOpen: (open: boolean) => void;
+  titleId: string;
 } | null>(null);
 
 function useDialog() {
@@ -21,9 +22,11 @@ const Dialog = ({ children, open, onOpenChange }: { children: React.ReactNode; o
     if (!isControlled) setInternalOpen(value);
     onOpenChange?.(value);
   };
+  // Stable id so DialogContent's aria-labelledby can point at DialogTitle.
+  const titleId = React.useId();
 
   return (
-    <DialogContext.Provider value={{ open: isOpen, setOpen: setIsOpen }}>
+    <DialogContext.Provider value={{ open: isOpen, setOpen: setIsOpen, titleId }}>
       {children}
     </DialogContext.Provider>
   );
@@ -39,9 +42,64 @@ const DialogTrigger = ({ children, asChild }: { children: React.ReactNode; asChi
   return <button onClick={() => setOpen(true)}>{children}</button>;
 };
 
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 const DialogContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, children, ...props }, ref) => {
-    const { open, setOpen } = useDialog();
+    const { open, setOpen, titleId } = useDialog();
+    const containerRef = React.useRef<HTMLDivElement | null>(null);
+    // Latest-ref so the document-level Escape listener stays stable.
+    const setOpenRef = React.useRef(setOpen);
+    setOpenRef.current = setOpen;
+
+    React.useEffect(() => {
+      if (!open) return;
+
+      // Remember where focus came from so it can be restored on close.
+      const previouslyFocused = document.activeElement as HTMLElement | null;
+      const previousOverflow = document.body.style.overflow;
+
+      document.body.style.overflow = "hidden";
+      containerRef.current?.focus();
+
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key === "Escape") setOpenRef.current(false);
+      };
+      document.addEventListener("keydown", onKeyDown);
+
+      return () => {
+        document.removeEventListener("keydown", onKeyDown);
+        document.body.style.overflow = previousOverflow;
+        previouslyFocused?.focus();
+      };
+    }, [open]);
+
+    // Basic focus trap: cycle Tab/Shift+Tab within the dialog.
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Tab") return;
+      const container = containerRef.current;
+      if (!container) return;
+      const focusables = Array.from(
+        container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      ).filter((el) => el.offsetParent !== null);
+      if (focusables.length === 0) {
+        event.preventDefault();
+        container.focus();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || active === container)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
     if (!open) return null;
 
     return (
@@ -51,9 +109,18 @@ const DialogContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
           onClick={() => setOpen(false)}
         />
         <div
-          ref={ref}
+          ref={(node) => {
+            containerRef.current = node;
+            if (typeof ref === "function") ref(node);
+            else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+          onKeyDown={handleKeyDown}
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-background p-6 shadow-lg",
+            "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-background p-6 shadow-lg outline-none",
             className
           )}
           {...props}
@@ -82,9 +149,17 @@ const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 );
 
 const DialogTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement>>(
-  ({ className, ...props }, ref) => (
-    <h2 ref={ref} className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />
-  )
+  ({ className, id, ...props }, ref) => {
+    const { titleId } = useDialog();
+    return (
+      <h2
+        ref={ref}
+        id={id ?? titleId}
+        className={cn("text-lg font-semibold leading-none tracking-tight", className)}
+        {...props}
+      />
+    );
+  }
 );
 DialogTitle.displayName = "DialogTitle";
 

@@ -22,12 +22,15 @@ type ToastContextValue = {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+const MAX_VISIBLE_TOASTS = 4;
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const addToast = useCallback((toast: Omit<Toast, "id">) => {
     const id = Math.random().toString(36).slice(2, 9);
-    setToasts((prev) => [...prev, { id, ...toast }]);
+    // Cap the stack: keep the newest toasts, drop the oldest.
+    setToasts((prev) => [...prev, { id, ...toast }].slice(-MAX_VISIBLE_TOASTS));
 
     const duration = toast.duration ?? 5000;
     if (duration > 0) {
@@ -61,7 +64,11 @@ function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-80">
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-80"
+    >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onClose={() => removeToast(toast.id)} />
       ))}
@@ -70,30 +77,52 @@ function ToastContainer() {
 }
 
 function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
+  // Theme tokens only, so dark mode stays readable. Variant accents are a
+  // left border; success/warning use palette hues with explicit dark: variants
+  // since there are no dedicated --success/--warning tokens.
   const variantClasses: Record<ToastVariant, string> = {
-    default: "bg-white border-gray-200",
-    success: "bg-green-50 border-green-200",
-    warning: "bg-yellow-50 border-yellow-200",
-    destructive: "bg-red-50 border-red-200",
+    default: "bg-card border",
+    success: "bg-card border border-l-4 border-l-green-600 dark:border-l-green-400",
+    warning: "bg-card border border-l-4 border-l-yellow-500 dark:border-l-yellow-400",
+    destructive: "bg-destructive/10 border-destructive/40 border-l-4 border-l-destructive",
+  };
+
+  const isDestructive = toast.variant === "destructive";
+
+  const dismiss = () => {
+    toast.onClick?.();
+    onClose();
   };
 
   return (
     <div
-      className={`rounded-lg border shadow-lg p-3 cursor-pointer transition-all hover:shadow-xl ${variantClasses[toast.variant ?? "default"]}`}
-      onClick={() => {
-        toast.onClick?.();
-        onClose();
-      }}
-      role="button"
+      // Errors announce assertively; everything else is a polite status region
+      // (declared on the viewport container).
+      role={isDestructive ? "alert" : "button"}
+      tabIndex={isDestructive ? undefined : 0}
+      className={`rounded-lg border shadow-lg p-3 cursor-pointer transition-all hover:shadow-xl text-foreground ${variantClasses[toast.variant ?? "default"]}`}
+      onClick={dismiss}
+      onKeyDown={
+        isDestructive
+          ? undefined
+          : (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                dismiss();
+              }
+            }
+      }
     >
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium">{toast.title}</p>
-          {toast.message && <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">{toast.message}</p>}
+          <p className={`text-sm font-medium ${isDestructive ? "text-destructive" : ""}`}>
+            {toast.title}
+          </p>
+          {toast.message && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{toast.message}</p>}
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className="text-gray-400 hover:text-gray-600"
+          className="shrink-0 text-muted-foreground hover:text-foreground"
           aria-label="Close"
         >
           ×
